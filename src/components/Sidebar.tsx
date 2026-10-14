@@ -46,7 +46,7 @@ export function Sidebar({ user }: SidebarProps) {
   ];
 
   const adminItems = [
-    { label: "Kelola Bidang", href: "/admin/bidang", icon: Building2 },
+    { label: "Kelola Unit Kerja (Bidang)", href: "/admin/bidang", icon: Building2 },
     { label: "Kelola Pengguna", href: "/admin/users", icon: Users },
     { label: "Profil SKPD & TTD", href: "/admin/pengaturan", icon: Settings },
   ];
@@ -67,10 +67,11 @@ export function Sidebar({ user }: SidebarProps) {
       </div>
 
       {/* Active Bidang Indicator */}
+      {/* Active Unit Kerja Indicator */}
       <div className="mx-4 mt-4 p-3 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs">
-        <div className="text-slate-400 font-medium">Lingkup Kerja:</div>
+        <div className="text-slate-400 font-medium">Unit Kerja Aktif:</div>
         <div className="font-semibold text-emerald-400 truncate mt-0.5">
-          {user.activeBidangNama || "Pilih Bidang"}
+          {user.activeBidangNama || "Pilih Unit Kerja"}
         </div>
       </div>
 

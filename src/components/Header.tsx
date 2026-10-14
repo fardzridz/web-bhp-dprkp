@@ -67,7 +67,7 @@ export function Header({ user, bidangList, activeBidang }: HeaderProps) {
             >
               <Building2 className="w-4 h-4 text-emerald-600" />
               <span>
-                Bidang: <strong className="font-semibold">{activeBidang?.nama || "Pilih Bidang"}</strong>
+                Unit Kerja: <strong className="font-semibold">{activeBidang?.nama || "Pilih Unit Kerja"}</strong>
               </span>
               <ChevronDown className="w-3.5 h-3.5 text-emerald-700" />
             </button>
@@ -111,7 +111,7 @@ export function Header({ user, bidangList, activeBidang }: HeaderProps) {
         ) : (
           <div className="flex items-center space-x-2 bg-slate-100 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm">
             <Building2 className="w-4 h-4 text-slate-500" />
-            <span className="font-medium">{activeBidang?.nama || "Bidang Kerja"}</span>
+            <span className="font-medium">{activeBidang?.nama || "Unit Kerja"}</span>
           </div>
         )}
       </div>

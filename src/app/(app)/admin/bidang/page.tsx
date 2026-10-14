@@ -152,10 +152,10 @@ export default function AdminBidangPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center space-x-2.5">
             <Building2 className="w-6 h-6 text-emerald-600" />
-            <span>Manajemen Bidang (Dinamis)</span>
+            <span>Manajemen Unit Kerja (Bidang)</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Tambah, edit, atau sesuaikan data bidang dan pejabat penandatangan dokumen resmi.
+            Tambah, edit, atau sesuaikan data unit kerja dinas dan pejabat penandatangan dokumen resmi.
           </p>
         </div>
         <button

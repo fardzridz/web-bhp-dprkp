@@ -109,8 +109,10 @@ export default function MasterBarangPage() {
 
   const openCreateModal = () => {
     setEditingId(null);
+    const nextNumber = items.length + 1;
+    const autoCode = `${bidangKode}-${String(nextNumber).padStart(4, "0")}`;
     setFormData({
-      kode: "",
+      kode: autoCode,
       nama: "",
       kategoriId: categories[0]?.id || "",
       satuanId: units[0]?.id || "",
@@ -413,18 +415,23 @@ export default function MasterBarangPage() {
             <form onSubmit={handleSave} className="p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                    Kode Barang
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-700 uppercase">
+                      Kode Barang
+                    </label>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                      Otomatis Unit Kerja
+                    </span>
+                  </div>
                   <input
                     type="text"
-                    placeholder={`Otomatis (${bidangKode}-0001)`}
+                    required
                     value={formData.kode}
                     onChange={(e) => setFormData({ ...formData, kode: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 text-sm font-mono uppercase"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 text-sm font-mono uppercase bg-slate-50 font-semibold text-slate-800"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Awalan bidang: <strong className="text-emerald-700">{bidangKode}</strong> (Bisa dikosongkan untuk auto / diisi kode aset khusus)
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Dibuat otomatis sesuai unit kerja: <strong className="text-emerald-700">{bidangKode}</strong>
                   </p>
                 </div>
                 <div className="sm:col-span-2">
