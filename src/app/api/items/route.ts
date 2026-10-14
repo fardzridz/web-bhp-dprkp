@@ -76,6 +76,12 @@ export async function POST(request: Request) {
 
     const activeBidangId = session.activeBidangId;
 
+    // Get active bidang to use its specific code prefix
+    const currentBidang = await db.query.bidang.findFirst({
+      where: eq(schema.bidang.id, activeBidangId),
+    });
+    const prefix = currentBidang?.kode ? currentBidang.kode.toUpperCase() : "BRG";
+
     // Generate kode if not provided
     let itemKode = kode?.trim();
     if (!itemKode) {
@@ -83,7 +89,7 @@ export async function POST(request: Request) {
         where: eq(schema.items.bidangId, activeBidangId),
       });
       const nextNumber = existingItems.length + 1;
-      itemKode = `BRG-${String(nextNumber).padStart(4, "0")}`;
+      itemKode = `${prefix}-${String(nextNumber).padStart(4, "0")}`;
     }
 
     const id = "item-" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);

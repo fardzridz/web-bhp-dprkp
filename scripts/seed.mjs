@@ -187,14 +187,14 @@ async function seed() {
 
   // Sample items
   const sampleItems = [
-    { id: "item-001", kode: "BRG-0001", nama: "Amplop putih 90", kategoriId: "ktg-sekr-atk", satuanId: "unit-box" },
-    { id: "item-002", kode: "BRG-0002", nama: "Amplop putih 104", kategoriId: "ktg-sekr-atk", satuanId: "unit-box" },
-    { id: "item-003", kode: "BRG-0003", nama: "Binderclips Joyko 260", kategoriId: "ktg-sekr-atk", satuanId: "unit-pak" },
-    { id: "item-004", kode: "BRG-0004", nama: "Ballpoint Tezo", kategoriId: "ktg-sekr-atk", satuanId: "unit-pak" },
-    { id: "item-005", kode: "BRG-0005", nama: "Stabillo Boss", kategoriId: "ktg-sekr-atk", satuanId: "unit-buah" },
-    { id: "item-006", kode: "BRG-0006", nama: "Kertas HVS 70 gsm F4", kategoriId: "ktg-sekr-kertas", satuanId: "unit-rim" },
-    { id: "item-007", kode: "BRG-0007", nama: "Kertas HVS 70 gsm A4", kategoriId: "ktg-sekr-kertas", satuanId: "unit-rim" },
-    { id: "item-008", kode: "BRG-0008", nama: "Kertas NCR Top", kategoriId: "ktg-sekr-kertas", satuanId: "unit-rim" },
+    { id: "item-001", kode: "SEKR-0001", nama: "Amplop putih 90", kategoriId: "ktg-sekr-atk", satuanId: "unit-box" },
+    { id: "item-002", kode: "SEKR-0002", nama: "Amplop putih 104", kategoriId: "ktg-sekr-atk", satuanId: "unit-box" },
+    { id: "item-003", kode: "SEKR-0003", nama: "Binderclips Joyko 260", kategoriId: "ktg-sekr-atk", satuanId: "unit-pak" },
+    { id: "item-004", kode: "SEKR-0004", nama: "Ballpoint Tezo", kategoriId: "ktg-sekr-atk", satuanId: "unit-pak" },
+    { id: "item-005", kode: "SEKR-0005", nama: "Stabillo Boss", kategoriId: "ktg-sekr-atk", satuanId: "unit-buah" },
+    { id: "item-006", kode: "SEKR-0006", nama: "Kertas HVS 70 gsm F4", kategoriId: "ktg-sekr-kertas", satuanId: "unit-rim" },
+    { id: "item-007", kode: "SEKR-0007", nama: "Kertas HVS 70 gsm A4", kategoriId: "ktg-sekr-kertas", satuanId: "unit-rim" },
+    { id: "item-008", kode: "SEKR-0008", nama: "Kertas NCR Top", kategoriId: "ktg-sekr-kertas", satuanId: "unit-rim" },
   ];
 
   for (const item of sampleItems) {

@@ -52,12 +52,16 @@ export async function POST(request: Request) {
     for (const i of existingItems) {
       itemMap[i.nama.trim().toLowerCase()] = true;
     }
+    // Get active bidang prefix
+    const currentBidang = await db.query.bidang.findFirst({
+      where: eq(schema.bidang.id, activeBidangId),
+    });
+    const prefix = currentBidang?.kode ? currentBidang.kode.toUpperCase() : "BRG";
 
     let addedCount = 0;
     let skippedCount = 0;
     let nextNum = existingItems.length + 1;
     const now = Date.now();
-
     for (const raw of rawItems as ImportItemPayload[]) {
       const cleanNama = raw.nama?.trim();
       if (!cleanNama) continue;
@@ -106,8 +110,7 @@ export async function POST(request: Request) {
       }
 
       const itemId = "item-" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
-      const itemKode = `BRG-${String(nextNum++).padStart(4, "0")}`;
-
+      const itemKode = `${prefix}-${String(nextNum++).padStart(4, "0")}`;
       await db.insert(schema.items).values({
         id: itemId,
         bidangId: activeBidangId,

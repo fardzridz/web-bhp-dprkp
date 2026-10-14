@@ -43,9 +43,9 @@ export default function MasterBarangPage() {
   const [items, setItems] = useState<ItemData[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
+  const [bidangKode, setBidangKode] = useState<string>("BRG");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   // Filters
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
@@ -74,15 +74,17 @@ export default function MasterBarangPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [itemRes, catRes, unitRes] = await Promise.all([
+      const [itemRes, catRes, unitRes, meRes] = await Promise.all([
         fetch("/api/items"),
         fetch("/api/categories"),
         fetch("/api/units"),
+        fetch("/api/auth/me"),
       ]);
 
       const itemJson = await itemRes.json();
       const catJson = await catRes.json();
       const unitJson = await unitRes.json();
+      const meJson = await meRes.json();
 
       if (!itemRes.ok) throw new Error(itemJson.error);
       if (!catRes.ok) throw new Error(catJson.error);
@@ -91,6 +93,9 @@ export default function MasterBarangPage() {
       setItems(itemJson.data);
       setCategories(catJson.data);
       setUnits(unitJson.data);
+      if (meJson.activeBidang?.kode) {
+        setBidangKode(meJson.activeBidang.kode.toUpperCase());
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Gagal memuat data master barang");
     } finally {
@@ -413,11 +418,14 @@ export default function MasterBarangPage() {
                   </label>
                   <input
                     type="text"
-                    placeholder="Otomatis"
+                    placeholder={`Otomatis (${bidangKode}-0001)`}
                     value={formData.kode}
                     onChange={(e) => setFormData({ ...formData, kode: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-emerald-500 text-sm font-mono uppercase"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Awalan bidang: <strong className="text-emerald-700">{bidangKode}</strong> (Bisa dikosongkan untuk auto / diisi kode aset khusus)
+                  </p>
                 </div>
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
