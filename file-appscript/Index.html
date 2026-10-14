@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <?!= include_('Styles'); ?>
+</head>
+<body>
+  <div id="loading" class="loading"><span></span><p>Menyiapkan data persediaan…</p></div>
+  <div id="toast" class="toast" role="status"></div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">SP</div><div><strong>SIPERSEDIA</strong><small>Administrasi barang</small></div></div>
+      <nav id="nav">
+        <button class="nav-item active" data-page="dashboard"><b>⌂</b>Beranda</button>
+        <button class="nav-item" data-page="receipt"><b>＋</b>Barang masuk</button>
+        <button class="nav-item" data-page="issue"><b>−</b>Barang keluar</button>
+        <button class="nav-item" data-page="stock"><b>□</b>Stok barang</button>
+        <button class="nav-item" data-page="master"><b>◇</b>Master data</button>
+        <button class="nav-item" data-page="reports"><b>≡</b>Laporan</button>
+      </nav>
+      <div class="user-card"><span id="userInitial">U</span><div><strong id="userName">Pengguna</strong><small id="userRole">—</small></div></div>
+    </aside>
+    <main>
+      <header class="topbar"><button id="menuBtn" class="icon-btn">☰</button><div><p class="eyebrow" id="pageEyebrow">RINGKASAN HARI INI</p><h1 id="pageTitle">Beranda</h1></div><div class="date-chip" id="today"></div></header>
+      <section id="content" class="content"></section>
+    </main>
+  </div>
+
+  <dialog id="modal"><form method="dialog" class="modal-card"><div class="modal-head"><h2 id="modalTitle">Formulir</h2><button value="cancel" class="icon-btn">×</button></div><div id="modalBody"></div></form></dialog>
+
+  <template id="dashboardTpl">
+    <div class="hero-band"><div><p>CATAT SEKALI, LAPORAN TERBENTUK</p><h2>Persediaan tertib.<br>Angka dapat ditelusuri.</h2></div><button class="btn light" data-go="receipt">+ Catat barang masuk</button></div>
+    <div class="metrics" id="metrics"></div>
+    <div class="grid-two"><article class="panel"><div class="panel-head"><div><p class="eyebrow">PERLU DIPERHATIKAN</p><h3>Stok minimum</h3></div><button class="link-btn" data-go="stock">Lihat semua</button></div><div id="lowStock"></div></article><article class="panel guide"><p class="eyebrow">ALUR CEPAT</p><h3>Tiga langkah kerja</h3><ol><li><b>01</b><span>Catat barang masuk dari vendor.</span></li><li><b>02</b><span>Catat penyerahan barang ke unit.</span></li><li><b>03</b><span>Cetak kartu dan mutasi periode.</span></li></ol></article></div>
+  </template>
+
+  <template id="transactionTpl">
+    <div class="toolbar"><div><p class="muted">Setiap dokumen dapat memuat beberapa barang.</p></div><button id="addTransaction" class="btn primary">+ Tambah transaksi</button></div>
+    <article class="panel table-panel"><div class="filters"><input id="trxSearch" placeholder="Cari nomor atau keterangan…"><select id="trxStatus"><option value="">Semua status</option><option value="AKTIF">Aktif</option><option value="DIBATALKAN">Dibatalkan</option></select></div><div class="table-wrap"><table><thead id="trxHead"></thead><tbody id="trxBody"></tbody></table></div></article>
+  </template>
+
+  <template id="stockTpl"><div class="toolbar"><input id="stockSearch" class="wide-search" placeholder="Cari kode atau nama barang…"><button id="refreshStock" class="btn secondary">Muat ulang</button></div><article class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>Barang</th><th>Kategori</th><th class="num">Jumlah</th><th>Satuan</th><th class="num">Harga satuan</th><th class="num">Nilai persediaan</th><th>Status</th><th></th></tr></thead><tbody id="stockBody"></tbody></table></div></article></template>
+
+  <template id="masterTpl"><div class="tabs" id="masterTabs"></div><div class="toolbar"><input id="masterSearch" class="wide-search" placeholder="Cari data…"><button id="addMaster" class="btn primary">+ Tambah data</button></div><article class="panel table-panel"><div class="table-wrap"><table><thead id="masterHead"></thead><tbody id="masterBody"></tbody></table></div></article></template>
+
+  <template id="reportsTpl"><div class="report-grid"><button class="report-card" data-report="card"><span>KB</span><div><h3>Kartu Barang</h3><p>Riwayat, saldo, dan FIFO.</p></div></button><button class="report-card" data-report="mutation"><span>MT</span><div><h3>Mutasi Persediaan</h3><p>Saldo awal sampai saldo akhir.</p></div></button><button class="report-card" data-report="receiptBook"><span>08</span><div><h3>Buku Penerimaan</h3><p>Lampiran 8.</p></div></button><button class="report-card" data-report="issueBook"><span>09</span><div><h3>Buku Pengeluaran</h3><p>Lampiran 9.</p></div></button><button class="report-card" data-report="consumableBook"><span>11</span><div><h3>Buku Barang Pakai Habis</h3><p>Lampiran 11.</p></div></button><button class="report-card" data-report="semesterConsumable"><span>15</span><div><h3>Laporan Semester</h3><p>Lampiran 15 barang pakai habis.</p></div></button><button class="report-card" data-report="warehouseSlip"><span>16</span><div><h3>Bukti Pengambilan</h3><p>Lampiran 16 per transaksi.</p></div></button><button class="report-card" data-report="settings"><span>TTD</span><div><h3>Pengaturan TTD</h3><p>Instansi dan pejabat laporan.</p></div></button></div><article class="panel report-result"><div id="reportControls"></div><div id="reportOutput" class="table-wrap empty-state">Pilih jenis laporan untuk mulai.</div></article></template>
+
+  <?!= include_('PrintTemplates'); ?>
+  <?!= include_('Scripts'); ?>
+</body>
+</html>
