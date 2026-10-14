@@ -31,9 +31,12 @@ export function Sidebar({ user }: SidebarProps) {
   const router = useRouter();
 
   const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // fallback
+    }
+    window.location.href = "/login";
   };
 
   const navItems = [
@@ -129,22 +132,21 @@ export function Sidebar({ user }: SidebarProps) {
       </div>
 
       {/* User Footer & Logout */}
-      <div className="p-4 border-t border-slate-800 bg-slate-950/40">
-        <div className="flex items-center justify-between mb-2">
-          <div className="truncate pr-2">
-            <p className="text-sm font-medium text-white truncate">{user.nama}</p>
-            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-emerald-950 text-emerald-400 border border-emerald-800">
-              {user.role === "SUPERADMIN" ? "Superadmin" : "Operator"}
-            </span>
-          </div>
-          <button
-            onClick={handleLogout}
-            title="Keluar"
-            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+      <div className="p-4 border-t border-slate-800 bg-slate-950/60 space-y-3">
+        <div className="truncate">
+          <p className="text-sm font-semibold text-white truncate">{user.nama}</p>
+          <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase bg-emerald-950 text-emerald-400 border border-emerald-800">
+            {user.role === "SUPERADMIN" ? "Superadmin Dinas" : "Operator Unit Kerja"}
+          </span>
         </div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="w-full py-2 px-3 bg-slate-800 hover:bg-rose-950/80 hover:text-rose-400 hover:border-rose-800/80 border border-slate-700 text-slate-300 font-medium rounded-xl text-xs transition flex items-center justify-center space-x-2 shadow-sm"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          <span>Keluar (Logout)</span>
+        </button>
       </div>
     </aside>
   );

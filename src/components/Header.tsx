@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, ChevronDown, Check } from "lucide-react";
+import { Building2, ChevronDown, Check, LogOut } from "lucide-react";
 
 interface HeaderProps {
   user: {
@@ -114,6 +114,14 @@ export function Header({ user, bidangList, activeBidang }: HeaderProps) {
             <span className="font-medium">{activeBidang?.nama || "Unit Kerja"}</span>
           </div>
         )}
+
+        <a
+          href="/logout"
+          title="Keluar dari akun"
+          className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition border border-transparent hover:border-rose-200"
+        >
+          <LogOut className="w-4 h-4" />
+        </a>
       </div>
     </header>
   );
