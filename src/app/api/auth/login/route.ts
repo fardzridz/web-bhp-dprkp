@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { verifyPassword } from "@/lib/auth-crypto";
 import { setSessionCookie } from "@/lib/session";
+import { recordActivityLog } from "@/lib/activity-log";
 
 export async function POST(request: Request) {
   try {
@@ -48,6 +49,14 @@ export async function POST(request: Request) {
       role: user.role as "SUPERADMIN" | "OPERATOR_BIDANG" | "KEPALA_BIDANG",
       bidangId: user.bidangId,
       activeBidangId,
+    });
+    await recordActivityLog({
+      userId: user.id,
+      userName: user.nama,
+      userRole: user.role,
+      bidangId: user.bidangId,
+      action: "LOGIN",
+      description: `Pengguna ${user.nama} (@${user.username}) berhasil masuk sistem.`,
     });
 
     return NextResponse.json({

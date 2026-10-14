@@ -161,3 +161,17 @@ export const agencySettings = sqliteTable("agency_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
 });
+
+// 14. LOG MANAJER / RIWAYAT AKTIVITAS (Audit log)
+export const activityLogs = sqliteTable("activity_logs", {
+  id: text("id").primaryKey(),
+  userId: text("user_id"),
+  userName: text("user_name").notNull(),
+  userRole: text("user_role").notNull(),
+  bidangId: text("bidang_id"),
+  bidangNama: text("bidang_nama"),
+  action: text("action").notNull(), // "LOGIN", "INPUT_MASUK", "INPUT_KELUAR", "TAMBAH_BARANG", "UBAH_BARANG", "HAPUS_BARANG"
+  description: text("description").notNull(),
+  metadata: text("metadata"), // JSON string
+  createdAt: integer("created_at").notNull(),
+});

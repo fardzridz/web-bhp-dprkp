@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { db, schema } from "@/db";
 import { eq, and, desc, asc } from "drizzle-orm";
+import { recordActivityLog } from "@/lib/activity-log";
 
 interface IssueItemInput {
   itemId: string;
@@ -82,10 +83,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Validate stock availability for all items before executing
+    // 1. Validate item ownership & stock availability
     for (const item of items as IssueItemInput[]) {
       const qty = Number(item.jumlah);
       if (!item.itemId || qty <= 0) continue;
+
+      // Check if item belongs to this active bidang
+      const itemBelongs = await db.query.items.findFirst({
+        where: and(eq(schema.items.id, item.itemId), eq(schema.items.bidangId, activeBidangId)),
+      });
+      if (!itemBelongs) {
+        return NextResponse.json(
+          { error: "Barang tidak terdaftar di unit kerja Anda. Unit kerja lain tidak dapat mengeluarkan barang ini." },
+          { status: 403 }
+        );
+      }
 
       const activeLayers = await db.query.fifoLayers.findMany({
         where: and(
@@ -123,6 +135,13 @@ export async function POST(request: Request) {
     const issueId = "iss-" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
     const now = Date.now();
 
+    const currentBidang = await db.query.bidang.findFirst({
+      where: eq(schema.bidang.id, activeBidangId),
+    });
+    const finalNamaPenyerah = currentBidang?.namaPengurus || namaPenyerah || session.nama;
+    const finalNipPenyerah = currentBidang?.nipPengurus || nipPenyerah;
+    const finalJabatanPenyerah = currentBidang?.jabatanPengurus || jabatanPenyerah || "Pengurus Barang";
+
     // 2. Insert Header
     await db.insert(schema.issues).values({
       id: issueId,
@@ -133,9 +152,9 @@ export async function POST(request: Request) {
       penerima: String(penerima).trim(),
       keperluan: keperluan || null,
       keterangan: keterangan || null,
-      namaPenyerah: namaPenyerah || null,
-      nipPenyerah: nipPenyerah || null,
-      jabatanPenyerah: jabatanPenyerah || null,
+      namaPenyerah: finalNamaPenyerah,
+      nipPenyerah: finalNipPenyerah,
+      jabatanPenyerah: finalJabatanPenyerah,
       namaPenerima: namaPenerima || null,
       nipPenerima: nipPenerima || null,
       jabatanPenerima: jabatanPenerima || null,
@@ -201,6 +220,15 @@ export async function POST(request: Request) {
         totalNilaiFifo: totalItemFifoValue,
       });
     }
+    await recordActivityLog({
+      userId: session.id,
+      userName: session.nama,
+      userRole: session.role,
+      bidangId: activeBidangId,
+      action: "INPUT_KELUAR",
+      description: `Menerbitkan BAST pengeluaran barang (${docNo}) kepada ${penerima} sejumlah ${items.length} jenis item.`,
+      metadata: { issueId, nomorDokumen: docNo, penerima },
+    });
 
     return NextResponse.json({ success: true, id: issueId, nomorDokumen: docNo });
   } catch (err: unknown) {

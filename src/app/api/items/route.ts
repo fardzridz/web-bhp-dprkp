@@ -2,14 +2,16 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { db, schema } from "@/db";
 import { eq, and, desc, count } from "drizzle-orm";
+import { recordActivityLog } from "@/lib/activity-log";
 
 export async function GET(request: Request) {
   const session = await getSession();
   if (!session || !session.activeBidangId) {
     return NextResponse.json({ error: "Unauthorized / Bidang belum dipilih" }, { status: 401 });
   }
-
-  const activeBidangId = session.activeBidangId;
+  const { searchParams } = new URL(request.url);
+  const requestedBidangId = searchParams.get("bidangId");
+  const activeBidangId = requestedBidangId || session.activeBidangId;
 
   // 1. Fetch items
   const items = await db.query.items.findMany({
@@ -107,6 +109,15 @@ export async function POST(request: Request) {
       createdAt: now,
       updatedAt: now,
     });
+    await recordActivityLog({
+      userId: session.id,
+      userName: session.nama,
+      userRole: session.role,
+      bidangId: activeBidangId,
+      action: "TAMBAH_BARANG",
+      description: `Menambahkan master barang baru: "${nama}" (${itemKode}).`,
+      metadata: { itemId: id, kode: itemKode, nama },
+    });
 
     return NextResponse.json({ success: true, id });
   } catch (err: unknown) {
@@ -141,6 +152,15 @@ export async function PUT(request: Request) {
         updatedAt: Date.now(),
       })
       .where(and(eq(schema.items.id, id), eq(schema.items.bidangId, session.activeBidangId)));
+    await recordActivityLog({
+      userId: session.id,
+      userName: session.nama,
+      userRole: session.role,
+      bidangId: session.activeBidangId,
+      action: "UBAH_BARANG",
+      description: `Memperbarui master barang: "${nama}" (${kode}).`,
+      metadata: { itemId: id, kode, nama },
+    });
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
@@ -176,6 +196,15 @@ export async function DELETE(request: Request) {
     await db
       .delete(schema.items)
       .where(and(eq(schema.items.id, id), eq(schema.items.bidangId, session.activeBidangId)));
+    await recordActivityLog({
+      userId: session.id,
+      userName: session.nama,
+      userRole: session.role,
+      bidangId: session.activeBidangId,
+      action: "HAPUS_BARANG",
+      description: `Menghapus master barang ID: ${id}.`,
+      metadata: { itemId: id },
+    });
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {

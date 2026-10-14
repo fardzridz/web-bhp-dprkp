@@ -13,6 +13,7 @@ import {
   Upload,
   Layers,
   Boxes,
+  Building2,
 } from "lucide-react";
 
 interface ItemData {
@@ -44,6 +45,10 @@ export default function MasterBarangPage() {
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [bidangKode, setBidangKode] = useState<string>("BRG");
+  const [bidangTabs, setBidangTabs] = useState<Array<{ id: string; nama: string; kode: string }>>([]);
+  const [activeTabId, setActiveTabId] = useState<string>("");
+  const [userRole, setUserRole] = useState<string>("OPERATOR_BIDANG");
+  const [userBidangId, setUserBidangId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Filters
@@ -74,17 +79,19 @@ export default function MasterBarangPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [itemRes, catRes, unitRes, meRes] = await Promise.all([
+      const [itemRes, catRes, unitRes, meRes, bRes] = await Promise.all([
         fetch("/api/items"),
         fetch("/api/categories"),
         fetch("/api/units"),
         fetch("/api/auth/me"),
+        fetch("/api/bidang"),
       ]);
 
       const itemJson = await itemRes.json();
       const catJson = await catRes.json();
       const unitJson = await unitRes.json();
       const meJson = await meRes.json();
+      const bJson = await bRes.json();
 
       if (!itemRes.ok) throw new Error(itemJson.error);
       if (!catRes.ok) throw new Error(catJson.error);
@@ -93,8 +100,20 @@ export default function MasterBarangPage() {
       setItems(itemJson.data);
       setCategories(catJson.data);
       setUnits(unitJson.data);
-      if (meJson.activeBidang?.kode) {
-        setBidangKode(meJson.activeBidang.kode.toUpperCase());
+      if (bJson.data) setBidangTabs(bJson.data);
+
+      if (meJson.user) {
+        setUserRole(meJson.user.role);
+        setUserBidangId(meJson.user.bidangId);
+      }
+
+      const currentBidang = meJson.activeBidang;
+      if (currentBidang) {
+        setActiveTabId(currentBidang.id);
+        setBidangKode(currentBidang.kode.toUpperCase());
+      } else if (bJson.data?.length > 0) {
+        setActiveTabId(bJson.data[0].id);
+        setBidangKode(bJson.data[0].kode.toUpperCase());
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Gagal memuat data master barang");
@@ -252,10 +271,10 @@ export default function MasterBarangPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center space-x-2.5">
             <Package className="w-6 h-6 text-emerald-600" />
-            <span>Master Barang (Katalog Bidang)</span>
+            <span>Stok & Master Barang Persediaan</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Daftar seluruh item barang persediaan milik bidang aktif dengan stok dan valuasi FIFO.
+            Daftar seluruh item barang persediaan dibagi per sub-menu unit kerja dengan stok dan valuasi FIFO.
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
@@ -279,6 +298,50 @@ export default function MasterBarangPage() {
           </button>
         </div>
       </div>
+
+      {/* Sub-menu Stok Barang Per Bidang / Unit Kerja */}
+      {bidangTabs.length > 0 && (
+        <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center space-x-1.5 overflow-x-auto no-print">
+          <span className="text-[11px] font-bold text-slate-500 uppercase px-3 whitespace-nowrap">
+            Sub Menu Unit Kerja:
+          </span>
+          {bidangTabs.map((b) => {
+            const isSelected = activeTabId === b.id;
+            return (
+              <button
+                key={b.id}
+                onClick={async () => {
+                  setActiveTabId(b.id);
+                  setBidangKode(b.kode.toUpperCase());
+                  setLoading(true);
+                  try {
+                    const res = await fetch(`/api/items?bidangId=${b.id}`);
+                    const json = await res.json();
+                    if (res.ok) setItems(json.data);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-2 whitespace-nowrap ${
+                  isSelected
+                    ? "bg-white text-emerald-800 shadow-sm border border-slate-200/80"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                }`}
+              >
+                <Building2 className={`w-3.5 h-3.5 ${isSelected ? "text-emerald-600" : "text-slate-400"}`} />
+                <span>{b.nama}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                    isSelected ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
+                  }`}
+                >
+                  {b.kode}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {error && (
         <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-start space-x-2">

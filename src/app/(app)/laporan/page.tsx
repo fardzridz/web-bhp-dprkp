@@ -5,13 +5,13 @@ import {
   FileText,
   Printer,
   Calendar,
-  Filter,
-  Building,
-  CheckCircle2,
+  Building2,
   FileSpreadsheet,
+  Boxes,
+  ArrowDownLeft,
 } from "lucide-react";
 
-type ReportType = "MUTASI" | "PENERIMAAN" | "PENGELUARAN";
+type ReportType = "MUTASI" | "PENERIMAAN" | "KARTU_BARANG";
 
 interface MutasiRow {
   id: string;
@@ -42,22 +42,36 @@ interface PenerimaanRow {
   jumlahHarga: number;
 }
 
-interface PengeluaranRow {
+interface KartuRow {
   tanggal: string;
   nomorDokumen: string;
-  penerima: string;
-  keperluan: string;
-  namaBarang: string;
-  jumlah: number;
-  satuan: string;
+  keterangan: string;
+  inQty: number;
   hargaSatuan: number;
-  jumlahHarga: number;
+  inNilai: number;
+  outQty: number;
+  outNilai: number;
+  saldoQty: number;
+  saldoNilai: number;
+}
+
+interface ItemOption {
+  id: string;
+  kode: string;
+  nama: string;
+  satuan: string;
+}
+
+interface BidangTab {
+  id: string;
+  nama: string;
+  kode: string;
 }
 
 interface ReportResponse {
   type: ReportType;
-  startDate: string;
-  endDate: string;
+  startDate?: string;
+  endDate?: string;
   agency?: Record<string, string>;
   bidang?: {
     nama?: string;
@@ -71,11 +85,25 @@ interface ReportResponse {
     jabatanPengurus?: string;
     pangkatPengurus?: string;
   };
+  item?: {
+    id: string;
+    kode: string;
+    nama: string;
+    satuanNama: string;
+    kategoriNama: string;
+  } | null;
+  itemsList?: ItemOption[];
+  currentStock?: number;
+  currentValue?: number;
   rows: unknown[];
 }
 
 export default function LaporanPage() {
   const [reportType, setReportType] = useState<ReportType>("MUTASI");
+  const [bidangTabs, setBidangTabs] = useState<BidangTab[]>([]);
+  const [activeBidangId, setActiveBidangId] = useState<string>("");
+  const [selectedItemId, setSelectedItemId] = useState<string>("");
+
   const [year, setYear] = useState("2026");
   const [startDate, setStartDate] = useState("2026-01-01");
   const [endDate, setEndDate] = useState("2026-06-30");
@@ -83,6 +111,30 @@ export default function LaporanPage() {
 
   const [reportData, setReportData] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const fetchInitialData = async () => {
+    try {
+      const [bRes, meRes] = await Promise.all([
+        fetch("/api/bidang"),
+        fetch("/api/auth/me"),
+      ]);
+      const bJson = await bRes.json();
+      const meJson = await meRes.json();
+
+      if (bJson.data) setBidangTabs(bJson.data);
+      if (meJson.activeBidang?.id) {
+        setActiveBidangId(meJson.activeBidang.id);
+      } else if (bJson.data?.length > 0) {
+        setActiveBidangId(bJson.data[0].id);
+      }
+    } catch {
+      // silent
+    }
+  };
+
+  useEffect(() => {
+    fetchInitialData();
+  }, []);
 
   const applyPreset = (preset: string, y = year) => {
     setActivePreset(preset);
@@ -111,14 +163,26 @@ export default function LaporanPage() {
   };
 
   const fetchReport = async () => {
+    if (!activeBidangId) return;
     setLoading(true);
     try {
-      const res = await fetch(
-        `/api/reports?type=${reportType}&startDate=${startDate}&endDate=${endDate}`
-      );
+      const params = new URLSearchParams({
+        type: reportType,
+        bidangId: activeBidangId,
+        startDate,
+        endDate,
+      });
+      if (reportType === "KARTU_BARANG" && selectedItemId) {
+        params.set("itemId", selectedItemId);
+      }
+
+      const res = await fetch(`/api/reports?${params.toString()}`);
       const json = await res.json();
       if (res.ok) {
         setReportData(json);
+        if (json.itemsList && json.itemsList.length > 0 && !selectedItemId) {
+          setSelectedItemId(json.itemsList[0].id);
+        }
       }
     } finally {
       setLoading(false);
@@ -127,7 +191,7 @@ export default function LaporanPage() {
 
   useEffect(() => {
     fetchReport();
-  }, [reportType, startDate, endDate]);
+  }, [reportType, activeBidangId, startDate, endDate, selectedItemId]);
 
   const formatRupiah = (num: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -149,15 +213,15 @@ export default function LaporanPage() {
 
   return (
     <div className="space-y-6">
-      {/* Title & Print Action */}
+      {/* Title & Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center space-x-2.5">
             <FileText className="w-6 h-6 text-emerald-600" />
-            <span>Laporan Resmi Persediaan (DPRKP)</span>
+            <span>Laporan Resmi Persediaan BHP</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Cetak buku penerimaan (Lamp. 8), buku pengeluaran (Lamp. 9), dan laporan mutasi persediaan triwulan/semesteran.
+            Buku Penerimaan, Kartu Barang, dan Laporan Mutasi Persediaan per Unit Kerja beserta tanda tangan resmi.
           </p>
         </div>
         <button
@@ -170,12 +234,47 @@ export default function LaporanPage() {
         </button>
       </div>
 
-      {/* Filter and Period Box */}
+      {/* 1. Sub-Menu Per Unit Kerja (Bidang) */}
+      {bidangTabs.length > 0 && (
+        <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center space-x-1.5 overflow-x-auto no-print">
+          <span className="text-[11px] font-bold text-slate-500 uppercase px-3 whitespace-nowrap">
+            Laporan Bidang:
+          </span>
+          {bidangTabs.map((b) => {
+            const isSelected = activeBidangId === b.id;
+            return (
+              <button
+                key={b.id}
+                onClick={() => {
+                  setActiveBidangId(b.id);
+                  setSelectedItemId("");
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-2 whitespace-nowrap ${
+                  isSelected
+                    ? "bg-white text-emerald-800 shadow-sm border border-slate-200/80"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                }`}
+              >
+                <Building2 className={`w-3.5 h-3.5 ${isSelected ? "text-emerald-600" : "text-slate-400"}`} />
+                <span>{b.nama}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                    isSelected ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
+                  }`}
+                >
+                  {b.kode}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 2. Tiga Jenis Dokumen (Buku Penerimaan, Kartu Barang, Laporan Mutasi) */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 no-print">
-        {/* Report Type Selector */}
         <div>
           <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-            Pilih Jenis Dokumen Laporan:
+            Pilih Format Dokumen:
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <button
@@ -191,7 +290,7 @@ export default function LaporanPage() {
               <div>
                 <div className="font-bold text-sm">Laporan Mutasi Persediaan</div>
                 <div className="text-xs text-slate-500 mt-0.5">
-                  Saldo Awal, Penambahan, Pengurangan & Saldo Akhir
+                  Saldo Awal, Masuk, Keluar & Saldo Akhir per Periode
                 </div>
               </div>
             </button>
@@ -205,126 +304,148 @@ export default function LaporanPage() {
                   : "border-slate-200 hover:bg-slate-50 text-slate-700"
               }`}
             >
-              <FileText className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
+              <ArrowDownLeft className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
               <div>
                 <div className="font-bold text-sm">Buku Penerimaan Barang</div>
                 <div className="text-xs text-slate-500 mt-0.5">
-                  Format Resmi Lampiran 8 (Rekanan, Faktur & BA)
+                  Rekapitulasi Barang Masuk, Rekanan, Faktur & BA
                 </div>
               </div>
             </button>
 
             <button
               type="button"
-              onClick={() => setReportType("PENGELUARAN")}
+              onClick={() => setReportType("KARTU_BARANG")}
               className={`p-3 rounded-xl border text-left transition flex items-start space-x-3 ${
-                reportType === "PENGELUARAN"
+                reportType === "KARTU_BARANG"
                   ? "bg-emerald-50 border-emerald-500 ring-2 ring-emerald-500/20 text-emerald-900"
                   : "border-slate-200 hover:bg-slate-50 text-slate-700"
               }`}
             >
-              <FileText className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
+              <Boxes className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
               <div>
-                <div className="font-bold text-sm">Buku Pengeluaran Barang</div>
+                <div className="font-bold text-sm">Kartu Barang (Lampiran 11)</div>
                 <div className="text-xs text-slate-500 mt-0.5">
-                  Format Resmi Lampiran 9 (BAST & Penyerahan)
+                  Catatan Mutasi & Saldo per Satuan Item Barang
                 </div>
               </div>
             </button>
           </div>
         </div>
 
-        {/* Quick Period Presets */}
-        <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-slate-500 uppercase mr-1">Periode:</span>
-          {[
-            { id: "TRIWULAN_1", label: "Triwulan I" },
-            { id: "TRIWULAN_2", label: "Triwulan II" },
-            { id: "TRIWULAN_3", label: "Triwulan III" },
-            { id: "TRIWULAN_4", label: "Triwulan IV" },
-            { id: "SEMESTER_1", label: "Semester I" },
-            { id: "SEMESTER_2", label: "Semester II" },
-            { id: "TAHUNAN", label: "1 Tahun Penuh" },
-          ].map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => applyPreset(p.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                activePreset === p.id
-                  ? "bg-emerald-600 text-white font-semibold shadow-sm"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
+        {/* Item Selector if Kartu Barang */}
+        {reportType === "KARTU_BARANG" && reportData?.itemsList && reportData.itemsList.length > 0 && (
+          <div className="pt-2 border-t border-slate-100 flex items-center gap-3">
+            <label className="text-xs font-bold text-slate-700 uppercase whitespace-nowrap">
+              Pilih Item Barang:
+            </label>
+            <select
+              value={selectedItemId || reportData.item?.id || ""}
+              onChange={(e) => setSelectedItemId(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-medium bg-white focus:ring-2 focus:ring-emerald-500"
             >
-              {p.label}
-            </button>
-          ))}
-        </div>
+              {reportData.itemsList.map((it) => (
+                <option key={it.id} value={it.id}>
+                  {it.kode} — {it.nama} ({it.satuan})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
-        {/* Custom Date Pickers */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-              Dari Tanggal
-            </label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setActivePreset("CUSTOM");
-                setStartDate(e.target.value);
-              }}
-              className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-xs"
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-              Sampai Tanggal
-            </label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setActivePreset("CUSTOM");
-                setEndDate(e.target.value);
-              }}
-              className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-xs"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={fetchReport}
-              className="w-full px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-medium rounded-xl text-xs transition"
-            >
-              Perbarui Tampilan Laporan
-            </button>
-          </div>
-        </div>
+        {/* Period Presets (For Mutasi & Penerimaan) */}
+        {reportType !== "KARTU_BARANG" && (
+          <>
+            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-slate-500 uppercase mr-1">Periode:</span>
+              {[
+                { id: "TRIWULAN_1", label: "Triwulan I" },
+                { id: "TRIWULAN_2", label: "Triwulan II" },
+                { id: "TRIWULAN_3", label: "Triwulan III" },
+                { id: "TRIWULAN_4", label: "Triwulan IV" },
+                { id: "SEMESTER_1", label: "Semester I" },
+                { id: "SEMESTER_2", label: "Semester II" },
+                { id: "TAHUNAN", label: "1 Tahun" },
+              ].map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => applyPreset(p.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                    activePreset === p.id
+                      ? "bg-emerald-600 text-white font-semibold shadow-sm"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 max-w-md">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                  Dari Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setActivePreset("CUSTOM");
+                    setStartDate(e.target.value);
+                  }}
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                  Sampai Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    setActivePreset("CUSTOM");
+                    setEndDate(e.target.value);
+                  }}
+                  className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-xs"
+                />
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Render Document Area */}
+      {/* 3. Lembar Dokumen Siap Cetak */}
       {reportData && (
         <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm print:p-0 print:border-none print:shadow-none">
-          {/* Government Official Kop Header */}
+          {/* Kop Dokumen Dinas */}
           <div className="text-center pb-4 mb-4">
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-600">
-              {reportType === "PENERIMAAN" ? "LAMPIRAN 8" : reportType === "PENGELUARAN" ? "LAMPIRAN 9" : "LAPORAN PERSURATAN & KEUANGAN"}
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              PEMERINTAH KABUPATEN PASURUAN
             </div>
-            <h2 className="text-sm font-bold uppercase mt-1">
+            <h2 className="text-sm font-bold uppercase mt-0.5 text-slate-900">
               {reportData.agency?.NAMA_INSTANSI || "DINAS PERUMAHAN RAKYAT DAN KAWASAN PERMUKIMAN"}
             </h2>
-            <h3 className="text-xs uppercase font-semibold text-slate-600">
-              LINGKUP: {reportData.bidang?.nama || "SELURUH BIDANG"} ({reportData.bidang?.kode || "-"})
+            <h3 className="text-xs uppercase font-semibold text-emerald-800 mt-0.5">
+              UNIT KERJA: {reportData.bidang?.nama || "DINAS"} ({reportData.bidang?.kode || "-"})
             </h3>
             <h1 className="text-base font-extrabold uppercase mt-2 underline tracking-wide">
               {reportType === "MUTASI" && "LAPORAN MUTASI BARANG PERSEDIAAN HABIS PAKAI"}
               {reportType === "PENERIMAAN" && "BUKU PENERIMAAN BARANG PERSEDIAAN"}
-              {reportType === "PENGELUARAN" && "BUKU PENGELUARAN BARANG PERSEDIAAN"}
+              {reportType === "KARTU_BARANG" && "KARTU BARANG PERSEDIAAN (LAMPIRAN 11)"}
             </h1>
-            <p className="text-xs text-slate-600 mt-1">
-              Periode: <strong>{formatDateIndo(startDate)}</strong> s.d. <strong>{formatDateIndo(endDate)}</strong>
-            </p>
+            {reportType !== "KARTU_BARANG" ? (
+              <p className="text-xs text-slate-600 mt-1">
+                Periode: <strong>{formatDateIndo(startDate)}</strong> s.d. <strong>{formatDateIndo(endDate)}</strong>
+              </p>
+            ) : (
+              reportData.item && (
+                <p className="text-xs text-slate-700 mt-1 font-medium">
+                  Nama Barang: <strong>{reportData.item.nama}</strong> ({reportData.item.kode}) • Satuan: <strong>{reportData.item.satuanNama}</strong>
+                </p>
+              )
+            )}
           </div>
 
           {/* Table: Mutasi */}
@@ -356,7 +477,7 @@ export default function LaporanPage() {
                   {reportData.rows.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="p-6 text-center text-slate-400">
-                        Tidak ada data mutasi persediaan pada periode ini.
+                        Tidak ada data mutasi persediaan pada unit kerja ini.
                       </td>
                     </tr>
                   ) : (
@@ -381,7 +502,7 @@ export default function LaporanPage() {
             </div>
           )}
 
-          {/* Table: Penerimaan (Lampiran 8) */}
+          {/* Table: Penerimaan */}
           {reportType === "PENERIMAAN" && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border border-slate-800 border-collapse">
@@ -390,8 +511,8 @@ export default function LaporanPage() {
                     <th rowSpan={2} className="border border-slate-800 p-2 w-10">No</th>
                     <th rowSpan={2} className="border border-slate-800 p-2 w-20">Tanggal</th>
                     <th rowSpan={2} className="border border-slate-800 p-2">Dari (Penyedia)</th>
-                    <th colSpan={2} className="border border-slate-800 p-2">Dokumen Faktur</th>
-                    <th colSpan={2} className="border border-slate-800 p-2">Dokumen BA Penerimaan</th>
+                    <th colSpan={2} className="border border-slate-800 p-2">Faktur</th>
+                    <th colSpan={2} className="border border-slate-800 p-2">BA Penerimaan</th>
                     <th rowSpan={2} className="border border-slate-800 p-2">Nama Barang</th>
                     <th rowSpan={2} className="border border-slate-800 p-2 w-16">Banyak</th>
                     <th rowSpan={2} className="border border-slate-800 p-2 w-16">Satuan</th>
@@ -435,44 +556,52 @@ export default function LaporanPage() {
             </div>
           )}
 
-          {/* Table: Pengeluaran (Lampiran 9) */}
-          {reportType === "PENGELUARAN" && (
+          {/* Table: Kartu Barang (Lampiran 11) */}
+          {reportType === "KARTU_BARANG" && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border border-slate-800 border-collapse">
                 <thead className="bg-slate-100 text-slate-900 text-[11px] font-bold uppercase text-center border-b border-slate-800">
                   <tr>
-                    <th className="border border-slate-800 p-2 w-10">No</th>
-                    <th className="border border-slate-800 p-2 w-20">Tanggal</th>
-                    <th className="border border-slate-800 p-2">Nomor Dokumen / BAST</th>
-                    <th className="border border-slate-800 p-2">Untuk / Penerima</th>
-                    <th className="border border-slate-800 p-2">Nama Barang</th>
-                    <th className="border border-slate-800 p-2 w-16">Banyak</th>
-                    <th className="border border-slate-800 p-2 w-16">Satuan</th>
-                    <th className="border border-slate-800 p-2 w-24">Harga Satuan</th>
-                    <th className="border border-slate-800 p-2 w-28">Jumlah Harga</th>
-                    <th className="border border-slate-800 p-2">Keperluan</th>
+                    <th rowSpan={2} className="border border-slate-800 p-2 w-20">Tanggal</th>
+                    <th rowSpan={2} className="border border-slate-800 p-2">No. Dokumen & Keterangan</th>
+                    <th colSpan={3} className="border border-slate-800 p-2">Penerimaan (Masuk)</th>
+                    <th colSpan={3} className="border border-slate-800 p-2">Pengeluaran (Keluar)</th>
+                    <th colSpan={2} className="border border-slate-800 p-2">Saldo Sisa</th>
+                  </tr>
+                  <tr className="border-b border-slate-800 text-[10px]">
+                    <th className="border border-slate-800 p-1.5 w-16">Banyak</th>
+                    <th className="border border-slate-800 p-1.5 w-24">Harga Satuan</th>
+                    <th className="border border-slate-800 p-1.5 w-24">Jumlah (Rp)</th>
+                    <th className="border border-slate-800 p-1.5 w-16">Banyak</th>
+                    <th className="border border-slate-800 p-1.5 w-24">Harga Satuan</th>
+                    <th className="border border-slate-800 p-1.5 w-24">Jumlah (Rp)</th>
+                    <th className="border border-slate-800 p-1.5 w-16">Banyak</th>
+                    <th className="border border-slate-800 p-1.5 w-24">Jumlah (Rp)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {reportData.rows.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="p-6 text-center text-slate-400">
-                        Tidak ada transaksi pengeluaran barang pada periode ini.
+                        Belum ada mutasi barang untuk item ini.
                       </td>
                     </tr>
                   ) : (
-                    (reportData.rows as PengeluaranRow[]).map((row, idx) => (
+                    (reportData.rows as KartuRow[]).map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50">
-                        <td className="border border-slate-800 p-2 text-center">{idx + 1}</td>
                         <td className="border border-slate-800 p-2 text-center">{row.tanggal}</td>
-                        <td className="border border-slate-800 p-2 font-mono text-[11px] font-semibold">{row.nomorDokumen}</td>
-                        <td className="border border-slate-800 p-2 font-medium">{row.penerima}</td>
-                        <td className="border border-slate-800 p-2 font-medium">{row.namaBarang}</td>
-                        <td className="border border-slate-800 p-2 text-right font-bold">{row.jumlah}</td>
-                        <td className="border border-slate-800 p-2 text-center">{row.satuan}</td>
-                        <td className="border border-slate-800 p-2 text-right font-mono">{formatRupiah(row.hargaSatuan)}</td>
-                        <td className="border border-slate-800 p-2 text-right font-mono font-bold">{formatRupiah(row.jumlahHarga)}</td>
-                        <td className="border border-slate-800 p-2 text-slate-600">{row.keperluan || "-"}</td>
+                        <td className="border border-slate-800 p-2">
+                          <div className="font-semibold font-mono text-[11px]">{row.nomorDokumen}</div>
+                          <div className="text-[10px] text-slate-600">{row.keterangan}</div>
+                        </td>
+                        <td className="border border-slate-800 p-2 text-right">{row.inQty > 0 ? row.inQty : "-"}</td>
+                        <td className="border border-slate-800 p-2 text-right font-mono">{row.inQty > 0 ? formatRupiah(row.hargaSatuan) : "-"}</td>
+                        <td className="border border-slate-800 p-2 text-right font-mono">{row.inNilai > 0 ? formatRupiah(row.inNilai) : "-"}</td>
+                        <td className="border border-slate-800 p-2 text-right">{row.outQty > 0 ? row.outQty : "-"}</td>
+                        <td className="border border-slate-800 p-2 text-right font-mono">{row.outQty > 0 ? formatRupiah(row.hargaSatuan) : "-"}</td>
+                        <td className="border border-slate-800 p-2 text-right font-mono">{row.outNilai > 0 ? formatRupiah(row.outNilai) : "-"}</td>
+                        <td className="border border-slate-800 p-2 text-right font-bold">{row.saldoQty}</td>
+                        <td className="border border-slate-800 p-2 text-right font-mono font-bold">{formatRupiah(row.saldoNilai)}</td>
                       </tr>
                     ))
                   )}
@@ -481,19 +610,19 @@ export default function LaporanPage() {
             </div>
           )}
 
-          {/* Official Signatures Footer */}
+          {/* Official Signatures Footer (Seng TTD Iku) */}
           <div className="mt-8 pt-4 grid grid-cols-2 gap-8 text-xs text-center text-slate-900 leading-relaxed break-inside-avoid">
             <div>
               <div className="font-semibold text-slate-700">MENGETAHUI</div>
               <div className="font-bold uppercase mt-0.5">
-                {reportData.bidang?.jabatanAtasan || reportData.agency?.JABATAN_KEPALA || "KEPALA DINAS"}
+                {reportData.bidang?.jabatanAtasan || "ATASAN LANGSUNG"}
               </div>
               <div className="h-20"></div>
               <div className="font-bold underline text-sm">
-                {reportData.bidang?.namaAtasan || reportData.agency?.NAMA_KEPALA || "( ................................................ )"}
+                {reportData.bidang?.namaAtasan || "( ................................................ )"}
               </div>
-              <div>NIP. {reportData.bidang?.nipAtasan || reportData.agency?.NIP_KEPALA || "................................"}</div>
-              <div className="text-[11px] text-slate-500">{reportData.bidang?.pangkatAtasan || reportData.agency?.PANGKAT_KEPALA || ""}</div>
+              <div>NIP. {reportData.bidang?.nipAtasan || "................................"}</div>
+              <div className="text-[11px] text-slate-500">{reportData.bidang?.pangkatAtasan || ""}</div>
             </div>
 
             <div>

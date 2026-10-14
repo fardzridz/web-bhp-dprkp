@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { db, schema } from "@/db";
 import { eq, desc } from "drizzle-orm";
+import { recordActivityLog } from "@/lib/activity-log";
 
 interface ReceiptItemInput {
   itemId: string;
@@ -143,6 +144,16 @@ export async function POST(request: Request) {
         status: "ACTIVE",
       });
     }
+
+    await recordActivityLog({
+      userId: session.id,
+      userName: session.nama,
+      userRole: session.role,
+      bidangId: activeBidangId,
+      action: "INPUT_MASUK",
+      description: `Mencatat penerimaan ${items.length} jenis barang (${docNo}) dari vendor ${vendorNama || "-"}.`,
+      metadata: { receiptId, nomorDokumen: docNo, vendorNama },
+    });
 
     return NextResponse.json({ success: true, id: receiptId, nomorDokumen: docNo });
   } catch (err: unknown) {

@@ -15,6 +15,7 @@ import {
   Settings,
   LogOut,
   Boxes,
+  ClipboardList,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -43,6 +44,7 @@ export function Sidebar({ user }: SidebarProps) {
     { label: "Barang Keluar (BAST)", href: "/transaksi/keluar", icon: ArrowUpRight },
     { label: "Kartu Stok & Persediaan", href: "/kartu-stok", icon: Boxes },
     { label: "Laporan Resmi DPRKP", href: "/laporan", icon: FileText },
+    { label: "Log Manajer", href: "/log-manajer", icon: ClipboardList },
   ];
 
   const adminItems = [
