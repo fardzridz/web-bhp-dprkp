@@ -1,0 +1,322 @@
+-- ========================================================
+-- SIPERSEDIA DPRKP - ALL-IN-ONE INIT FOR CLOUDFLARE D1
+-- Skema Database Lengkap + Data Awal (Instansi, Bidang, Satuan, Akun)
+-- ========================================================
+
+-- >>> drizzle/0000_old_cloak.sql <<<
+CREATE TABLE `agency_settings` (
+	`key` text PRIMARY KEY NOT NULL,
+	`value` text NOT NULL
+);
+
+CREATE TABLE `bidang` (
+	`id` text PRIMARY KEY NOT NULL,
+	`nama` text NOT NULL,
+	`kode` text NOT NULL,
+	`deskripsi` text,
+	`nama_atasan` text,
+	`nip_atasan` text,
+	`jabatan_atasan` text,
+	`pangkat_atasan` text,
+	`nama_pengurus` text,
+	`nip_pengurus` text,
+	`jabatan_pengurus` text,
+	`pangkat_pengurus` text,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL
+);
+
+CREATE UNIQUE INDEX `bidang_kode_unique` ON `bidang` (`kode`);
+CREATE TABLE `categories` (
+	`id` text PRIMARY KEY NOT NULL,
+	`bidang_id` text NOT NULL,
+	`nama` text NOT NULL,
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`bidang_id`) REFERENCES `bidang`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE TABLE `fifo_layers` (
+	`id` text PRIMARY KEY NOT NULL,
+	`bidang_id` text NOT NULL,
+	`item_id` text NOT NULL,
+	`receipt_item_id` text,
+	`tanggal` text NOT NULL,
+	`harga_satuan` real NOT NULL,
+	`jumlah_awal` real NOT NULL,
+	`sisa` real NOT NULL,
+	`status` text DEFAULT 'ACTIVE' NOT NULL,
+	FOREIGN KEY (`bidang_id`) REFERENCES `bidang`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`item_id`) REFERENCES `items`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`receipt_item_id`) REFERENCES `receipt_items`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE TABLE `fifo_usages` (
+	`id` text PRIMARY KEY NOT NULL,
+	`issue_item_id` text NOT NULL,
+	`fifo_layer_id` text NOT NULL,
+	`jumlah` real NOT NULL,
+	`harga_satuan` real NOT NULL,
+	`nilai` real NOT NULL,
+	FOREIGN KEY (`issue_item_id`) REFERENCES `issue_items`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`fifo_layer_id`) REFERENCES `fifo_layers`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE TABLE `issue_items` (
+	`id` text PRIMARY KEY NOT NULL,
+	`issue_id` text NOT NULL,
+	`item_id` text NOT NULL,
+	`jumlah` real NOT NULL,
+	`total_nilai_fifo` real DEFAULT 0 NOT NULL,
+	FOREIGN KEY (`issue_id`) REFERENCES `issues`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`item_id`) REFERENCES `items`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE TABLE `issues` (
+	`id` text PRIMARY KEY NOT NULL,
+	`bidang_id` text NOT NULL,
+	`nomor_dokumen` text NOT NULL,
+	`tanggal` text NOT NULL,
+	`tgl_penyerahan` text,
+	`penerima` text NOT NULL,
+	`keperluan` text,
+	`keterangan` text,
+	`nama_penyerah` text,
+	`nip_penyerah` text,
+	`jabatan_penyerah` text,
+	`nama_penerima` text,
+	`nip_penerima` text,
+	`jabatan_penerima` text,
+	`created_by` text,
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`bidang_id`) REFERENCES `bidang`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE TABLE `items` (
+	`id` text PRIMARY KEY NOT NULL,
+	`bidang_id` text NOT NULL,
+	`kode` text NOT NULL,
+	`nama` text NOT NULL,
+	`kategori_id` text,
+	`satuan_id` text,
+	`stok_minimum` real DEFAULT 0,
+	`status` text DEFAULT 'ACTIVE' NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`bidang_id`) REFERENCES `bidang`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`kategori_id`) REFERENCES `categories`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`satuan_id`) REFERENCES `units`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE TABLE `receipt_items` (
+	`id` text PRIMARY KEY NOT NULL,
+	`receipt_id` text NOT NULL,
+	`item_id` text NOT NULL,
+	`jumlah` real NOT NULL,
+	`harga_satuan` real NOT NULL,
+	`jumlah_harga` real NOT NULL,
+	FOREIGN KEY (`receipt_id`) REFERENCES `receipts`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`item_id`) REFERENCES `items`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE TABLE `receipts` (
+	`id` text PRIMARY KEY NOT NULL,
+	`bidang_id` text NOT NULL,
+	`nomor_dokumen` text NOT NULL,
+	`tanggal` text NOT NULL,
+	`vendor_id` text,
+	`vendor_nama` text,
+	`no_faktur` text,
+	`tgl_faktur` text,
+	`no_ba` text,
+	`tgl_ba` text,
+	`keterangan` text,
+	`created_by` text,
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`bidang_id`) REFERENCES `bidang`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`vendor_id`) REFERENCES `vendors`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE TABLE `units` (
+	`id` text PRIMARY KEY NOT NULL,
+	`nama` text NOT NULL,
+	`created_at` integer NOT NULL
+);
+
+CREATE UNIQUE INDEX `units_nama_unique` ON `units` (`nama`);
+CREATE TABLE `users` (
+	`id` text PRIMARY KEY NOT NULL,
+	`username` text NOT NULL,
+	`nama` text NOT NULL,
+	`password_hash` text NOT NULL,
+	`salt` text NOT NULL,
+	`role` text NOT NULL,
+	`bidang_id` text,
+	`status` text DEFAULT 'ACTIVE' NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`bidang_id`) REFERENCES `bidang`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE UNIQUE INDEX `users_username_unique` ON `users` (`username`);
+CREATE TABLE `vendors` (
+	`id` text PRIMARY KEY NOT NULL,
+	`nama` text NOT NULL,
+	`alamat` text,
+	`telepon` text,
+	`created_at` integer NOT NULL
+);
+
+
+-- >>> drizzle/0001_p0_integrity.sql <<<
+CREATE TABLE `activity_logs` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text,
+	`user_name` text NOT NULL,
+	`user_role` text NOT NULL,
+	`bidang_id` text,
+	`bidang_nama` text,
+	`action` text NOT NULL,
+	`description` text NOT NULL,
+	`metadata` text,
+	`created_at` integer NOT NULL
+);
+
+CREATE UNIQUE INDEX `issues_bidang_nomor_unique` ON `issues` (`bidang_id`,`nomor_dokumen`);
+CREATE UNIQUE INDEX `items_bidang_kode_unique` ON `items` (`bidang_id`,`kode`);
+CREATE UNIQUE INDEX `receipts_bidang_nomor_unique` ON `receipts` (`bidang_id`,`nomor_dokumen`);
+
+-- >>> drizzle/0002_p1_saldo_awal_opname.sql <<<
+CREATE TABLE `opening_balances` (
+	`id` text PRIMARY KEY NOT NULL,
+	`bidang_id` text NOT NULL,
+	`item_id` text NOT NULL,
+	`tanggal` text NOT NULL,
+	`jumlah` real NOT NULL,
+	`harga_satuan` real NOT NULL,
+	`keterangan` text,
+	`fifo_layer_id` text,
+	`created_by` text,
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`bidang_id`) REFERENCES `bidang`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`item_id`) REFERENCES `items`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE UNIQUE INDEX `opening_balances_bidang_item_tanggal_unique` ON `opening_balances` (`bidang_id`,`item_id`,`tanggal`);
+CREATE TABLE `stock_adjustment_items` (
+	`id` text PRIMARY KEY NOT NULL,
+	`adjustment_id` text NOT NULL,
+	`item_id` text NOT NULL,
+	`stok_sistem` real NOT NULL,
+	`nilai_sistem` real NOT NULL,
+	`harga_satuan_sistem` real DEFAULT 0 NOT NULL,
+	`jumlah_fisik` real NOT NULL,
+	`nilai_fisik` real DEFAULT 0 NOT NULL,
+	`selisih_jumlah` real NOT NULL,
+	`selisih_nilai` real DEFAULT 0 NOT NULL,
+	`kondisi` text,
+	`keterangan` text,
+	FOREIGN KEY (`adjustment_id`) REFERENCES `stock_adjustments`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`item_id`) REFERENCES `items`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE TABLE `stock_adjustments` (
+	`id` text PRIMARY KEY NOT NULL,
+	`bidang_id` text NOT NULL,
+	`nomor_dokumen` text NOT NULL,
+	`tanggal` text NOT NULL,
+	`keterangan` text,
+	`created_by` text,
+	`created_at` integer NOT NULL,
+	FOREIGN KEY (`bidang_id`) REFERENCES `bidang`(`id`) ON UPDATE no action ON DELETE no action
+);
+
+CREATE UNIQUE INDEX `stock_adjustments_bidang_nomor_unique` ON `stock_adjustments` (`bidang_id`,`nomor_dokumen`);
+ALTER TABLE `issues` ADD `jenis` text DEFAULT 'BAST' NOT NULL;
+ALTER TABLE `vendors` ADD `npwp` text;
+
+-- >>> drizzle/0003_p1_opname_links.sql <<<
+ALTER TABLE `stock_adjustments` ADD `issue_id` text;
+ALTER TABLE `stock_adjustments` ADD `receipt_id` text;
+
+-- >>> drizzle/0004_p3_cetak_resmi.sql <<<
+-- P3: cetak resmi — nomor Berita Acara manual + data pejabat tingkat dinas & daftar unit kerja.
+ALTER TABLE stock_adjustments ADD COLUMN nomor_ba TEXT;
+
+INSERT OR IGNORE INTO agency_settings ("key", "value") VALUES ('UNIT_KERJA', 'Sekretariat|Bidang Permukiman|Bidang Perumahan|UPT Pemakaman|UPT Rusunawa');
+
+INSERT OR REPLACE INTO agency_settings ("key", "value") VALUES ('NAMA_KEPALA', 'AKUNG NOVAJANTO SODIQ NUCH, ST.MT');
+
+INSERT OR REPLACE INTO agency_settings ("key", "value") VALUES ('NIP_KEPALA', '197211252003121006');
+
+INSERT OR REPLACE INTO agency_settings ("key", "value") VALUES ('JABATAN_KEPALA', 'Kepala Dinas Perumahan Rakyat dan Kawasan Permukiman');
+
+INSERT OR REPLACE INTO agency_settings ("key", "value") VALUES ('NAMA_PENGURUS', 'ADE CANDRA WAHYU DERMAWAN A.md');
+
+INSERT OR REPLACE INTO agency_settings ("key", "value") VALUES ('NIP_PENGURUS', '199606132020121008');
+
+INSERT OR REPLACE INTO agency_settings ("key", "value") VALUES ('JABATAN_PENGURUS', 'Pengurus Barang Pengguna');
+
+INSERT OR REPLACE INTO agency_settings ("key", "value") VALUES ('PANGKAT_PENGURUS', 'Pengatur TK I (IId)');
+
+INSERT OR IGNORE INTO agency_settings ("key", "value") VALUES ('NAMA_PENATAUSAHAAN', 'IIL ROSIAWATI, ST');
+
+INSERT OR IGNORE INTO agency_settings ("key", "value") VALUES ('NIP_PENATAUSAHAAN', '1979052020010012024');
+
+INSERT OR IGNORE INTO agency_settings ("key", "value") VALUES ('JABATAN_PENATAUSAHAAN', 'Pejabat Penatausahaan Barang Pengguna');
+
+INSERT OR IGNORE INTO agency_settings ("key", "value") VALUES ('PANGKAT_PENATAUSAHAAN', '');
+
+INSERT OR IGNORE INTO agency_settings ("key", "value") VALUES ('NAMA_PEMBANTU', 'MUSTOFA');
+
+INSERT OR IGNORE INTO agency_settings ("key", "value") VALUES ('NIP_PEMBANTU', '197206082007011020');
+
+INSERT OR IGNORE INTO agency_settings ("key", "value") VALUES ('JABATAN_PEMBANTU', 'Pembantu Pengurus Barang Pengguna');
+
+INSERT OR IGNORE INTO agency_settings ("key", "value") VALUES ('PANGKAT_PEMBANTU', '');
+
+
+-- >>> drizzle/0005_p3_tanggal_ba.sql <<<
+-- P3: tanggal penandatanganan Berita Acara (biasanya setelah tanggal opname).
+ALTER TABLE stock_adjustments ADD COLUMN tanggal_ba TEXT;
+
+
+-- >>> Seed Data <<<
+-- SIPERSEDIA DPRKP - Initial Seed Data for Cloudflare D1
+
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('NAMA_INSTANSI', 'DINAS PERUMAHAN RAKYAT DAN KAWASAN PERMUKIMAN');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('KAB_KOTA', 'KOTA PASURUAN');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('PROVINSI', 'JAWA TIMUR');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('TEMPAT_TTD', 'Pasuruan');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('NAMA_KEPALA', 'Ir. H. Hari Apriyanto');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('NIP_KEPALA', '19680415 199803 1 005');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('JABATAN_KEPALA', 'Kepala Dinas Perumahan Rakyat dan Kawasan Permukiman');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('PANGKAT_KEPALA', 'Pembina Utama Muda (IV/c)');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('NAMA_PENGURUS', 'Ahmad Zainuri, S.AP');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('NIP_PENGURUS', '19850612 201001 1 012');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('JABATAN_PENGURUS', 'Pengurus Barang Pengguna');
+INSERT OR REPLACE INTO agency_settings (key, value) VALUES ('PANGKAT_PENGURUS', 'Penata (III/c)');
+
+INSERT OR REPLACE INTO bidang (id, nama, kode, deskripsi, nama_atasan, nip_atasan, jabatan_atasan, pangkat_atasan, nama_pengurus, nip_pengurus, jabatan_pengurus, pangkat_pengurus, created_at, updated_at) VALUES ('sekretariat', 'Sekretariat', 'SEKR', 'Sekretariat Dinas Perumahan Rakyat dan Kawasan Permukiman', 'Drs. Mohammad Najib, M.Si', '19720510 199303 1 004', 'Sekretaris Dinas', 'Pembina Tingkat I (IV/b)', 'Ahmad Zainuri, S.AP', '19850612 201001 1 012', 'Penyimpan / Pengurus Barang Pembantu', 'Penata (III/c)', 1792763456053, 1792763456053);
+INSERT OR REPLACE INTO bidang (id, nama, kode, deskripsi, nama_atasan, nip_atasan, jabatan_atasan, pangkat_atasan, nama_pengurus, nip_pengurus, jabatan_pengurus, pangkat_pengurus, created_at, updated_at) VALUES ('perumahan', 'Bidang Perumahan', 'PRMH', 'Bidang Perumahan Rakyat', 'Budi Santoso, ST, MT', '19750820 200212 1 006', 'Kepala Bidang Perumahan', 'Pembina (IV/a)', 'Siti Rahmawati, A.Md', '19900315 201402 2 003', 'Pengurus Barang Bidang Perumahan', 'Pengatur Tingkat I (II/d)', 1792763456053, 1792763456053);
+INSERT OR REPLACE INTO bidang (id, nama, kode, deskripsi, nama_atasan, nip_atasan, jabatan_atasan, pangkat_atasan, nama_pengurus, nip_pengurus, jabatan_pengurus, pangkat_pengurus, created_at, updated_at) VALUES ('permukiman', 'Bidang Kawasan Permukiman', 'PKP', 'Bidang Kawasan Permukiman', 'Ir. Agus Wijaya, MT', '19780312 200501 1 009', 'Kepala Bidang Kawasan Permukiman', 'Pembina (IV/a)', 'Eko Prasetyo', '19921104 201503 1 002', 'Pengurus Barang Bidang Permukiman', 'Pengatur (II/c)', 1792763456053, 1792763456053);
+INSERT OR REPLACE INTO bidang (id, nama, kode, deskripsi, nama_atasan, nip_atasan, jabatan_atasan, pangkat_atasan, nama_pengurus, nip_pengurus, jabatan_pengurus, pangkat_pengurus, created_at, updated_at) VALUES ('pertanahan', 'Bidang Pertanahan', 'TNH', 'Bidang Pertanahan', 'Hendra Setiawan, SH, M.Hum', '19760925 200312 1 005', 'Kepala Bidang Pertanahan', 'Pembina (IV/a)', 'Rizal Firmansyah', '19940718 201903 1 008', 'Pengurus Barang Bidang Pertanahan', 'Pengatur (II/c)', 1792763456053, 1792763456053);
+
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-buah', 'buah', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-pak', 'pak', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-box', 'box', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-rim', 'rim', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-rol', 'rol', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-botol', 'botol', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-lembar', 'lembar', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-lusin', 'lusin', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-set', 'set', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-buku', 'buku', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-meter', 'meter', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-sak', 'sak', 1792763456053);
+
+INSERT OR REPLACE INTO users (id, username, password_hash, salt, nama, role, bidang_id, status, created_at, updated_at) VALUES ('usr-superadmin', 'superadmin', '4b4593fd473e181970b9bac8cf0dd3683ab7b8b191c96a3a03b024c76c4f97c7', 'ec147f7fdc14858c3ab05e545ae07e99', 'Superadmin Pengurus Barang Dinas', 'SUPERADMIN', NULL, 'ACTIVE', 1792763456053, 1792763456053);
+INSERT OR REPLACE INTO users (id, username, password_hash, salt, nama, role, bidang_id, status, created_at, updated_at) VALUES ('usr-sekretariat', 'operator.sekretariat', 'f1a46d5601d989a2802039bab03c9e6c36806a9edf3babec2841f2cff4e38baa', 'f1ce1b3c657a3d1d157dcf8931fcf3be', 'Operator BHP Sekretariat', 'OPERATOR_BIDANG', 'sekretariat', 'ACTIVE', 1792763456053, 1792763456053);
+INSERT OR REPLACE INTO users (id, username, password_hash, salt, nama, role, bidang_id, status, created_at, updated_at) VALUES ('usr-perumahan', 'operator.perumahan', '8b692581a14d3f2622aae551085f4e64278336224fcb680f20fc733f9d3c09a2', '24d718f871c3f665eacfcd4e29c7eb3a', 'Operator BHP Bidang Perumahan', 'OPERATOR_BIDANG', 'perumahan', 'ACTIVE', 1792763456053, 1792763456053);
+INSERT OR REPLACE INTO users (id, username, password_hash, salt, nama, role, bidang_id, status, created_at, updated_at) VALUES ('usr-permukiman', 'operator.permukiman', 'c997841aea384f5bbd617d9ec1ebde73d0764cc1d87eb6e50151bc5494a50c54', '0680dc6af5c0b79ac422d93448e94631', 'Operator BHP Bidang Permukiman', 'OPERATOR_BIDANG', 'permukiman', 'ACTIVE', 1792763456053, 1792763456053);
+INSERT OR REPLACE INTO users (id, username, password_hash, salt, nama, role, bidang_id, status, created_at, updated_at) VALUES ('usr-pertanahan', 'operator.pertanahan', '605a0f162242102044da28659e4754d38fe29733463129b87cc40b389af7fd83', 'af06447935265b26613de085cceae7f1', 'Operator BHP Bidang Pertanahan', 'OPERATOR_BIDANG', 'pertanahan', 'ACTIVE', 1792763456053, 1792763456053);
+
