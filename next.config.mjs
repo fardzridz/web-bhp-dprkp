@@ -2,7 +2,7 @@
 const nextConfig = {
   output: "standalone",
   reactStrictMode: true,
-  serverExternalPackages: ['better-sqlite3', '@libsql/client'],
+  serverExternalPackages: ['@libsql/client'],
 };
 
 export default nextConfig;
