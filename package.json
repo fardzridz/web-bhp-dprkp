@@ -13,7 +13,11 @@
     "db:repair-stock": "node scripts/repair-stock.mjs",
     "db:seed": "node scripts/seed.mjs",
     "db:rapikan-kategori": "node scripts/rapikan-kategori.mjs",
-    "db:import-master": "node scripts/import-master-resmi.mjs"
+    "db:import-master": "node scripts/import-master-resmi.mjs",
+    "d1:migrate:local": "wrangler d1 migrations apply bhp_dprkp_db --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply bhp_dprkp_db --remote",
+    "d1:seed:local": "wrangler d1 execute bhp_dprkp_db --local --file=./scripts/seed.sql",
+    "d1:seed:remote": "wrangler d1 execute bhp_dprkp_db --remote --file=./scripts/seed.sql"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

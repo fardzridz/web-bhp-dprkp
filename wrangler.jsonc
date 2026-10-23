@@ -12,7 +12,8 @@
     {
       "binding": "DB",
       "database_name": "bhp_dprkp_db",
-      "database_id": "local-d1-placeholder"
+      "database_id": "local-d1-placeholder",
+      "migrations_dir": "drizzle"
     }
   ]
 }
