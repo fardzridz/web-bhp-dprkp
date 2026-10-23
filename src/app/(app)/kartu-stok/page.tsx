@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { formatRupiah } from "@/lib/format";
 import {
   Boxes,
   Printer,
@@ -92,14 +93,6 @@ export default function KartuStokPage() {
       fetchStockCard(selectedItemId);
     }
   }, [selectedItemId]);
-
-  const formatRupiah = (num: number) => {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      maximumFractionDigits: 0,
-    }).format(num);
-  };
 
   return (
     <div className="space-y-6">

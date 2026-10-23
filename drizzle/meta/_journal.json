@@ -8,6 +8,27 @@
       "when": 1791959535035,
       "tag": "0000_old_cloak",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792107266283,
+      "tag": "0001_p0_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792113946231,
+      "tag": "0002_p1_saldo_awal_opname",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792114041946,
+      "tag": "0003_p1_opname_links",
+      "breakpoints": true
     }
   ]
 }

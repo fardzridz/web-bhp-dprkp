@@ -5,6 +5,7 @@ import * as schema from "./schema";
 // Single instance for local development / node runtime
 const client = createClient({
   url: process.env.DATABASE_URL || "file:local.sqlite",
+  authToken: process.env.DATABASE_AUTH_TOKEN,
 });
 
 export const db = drizzle(client, { schema });

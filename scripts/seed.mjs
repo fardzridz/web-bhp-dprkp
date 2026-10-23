@@ -3,6 +3,7 @@ import { generateSalt, hashPassword } from "../src/lib/auth-crypto.ts";
 
 const client = createClient({
   url: process.env.DATABASE_URL || "file:local.sqlite",
+  authToken: process.env.DATABASE_AUTH_TOKEN,
 });
 
 const now = Date.now();
@@ -13,13 +14,17 @@ async function seed() {
   // 1. Agency Settings
   const settings = [
     { key: "NAMA_INSTANSI", value: "DINAS PERUMAHAN RAKYAT DAN KAWASAN PERMUKIMAN" },
-    { key: "KAB_KOTA", value: "KABUPATEN PASURUAN" },
+    { key: "KAB_KOTA", value: "KOTA PASURUAN" },
     { key: "PROVINSI", value: "JAWA TIMUR" },
     { key: "TEMPAT_TTD", value: "Pasuruan" },
     { key: "NAMA_KEPALA", value: "Ir. H. Hari Apriyanto" },
     { key: "NIP_KEPALA", value: "19680415 199803 1 005" },
     { key: "JABATAN_KEPALA", value: "Kepala Dinas Perumahan Rakyat dan Kawasan Permukiman" },
     { key: "PANGKAT_KEPALA", value: "Pembina Utama Muda (IV/c)" },
+    { key: "NAMA_PENGURUS", value: "Ahmad Zainuri, S.AP" },
+    { key: "NIP_PENGURUS", value: "19850612 201001 1 012" },
+    { key: "JABATAN_PENGURUS", value: "Pengurus Barang Pengguna" },
+    { key: "PANGKAT_PENGURUS", value: "Penata (III/c)" },
   ];
 
   for (const s of settings) {
@@ -107,7 +112,7 @@ async function seed() {
   }
 
   // 3. Units
-  const unitsList = ["buah", "pak", "box", "rim", "rol", "botol", "lembar", "lusin", "set", "buku", "meter"];
+  const unitsList = ["buah", "pak", "box", "rim", "rol", "botol", "lembar", "lusin", "set", "buku", "meter", "sak"];
   for (const u of unitsList) {
     await client.execute({
       sql: `INSERT OR IGNORE INTO units (id, nama, created_at) VALUES (?, ?, ?)`,
@@ -174,8 +179,13 @@ async function seed() {
   const defaultCategories = [
     { id: "ktg-sekr-atk", bidangId: "sekretariat", nama: "Alat Tulis Kantor" },
     { id: "ktg-sekr-kertas", bidangId: "sekretariat", nama: "Kertas dan Cover" },
-    { id: "ktg-sekr-cetak", bidangId: "sekretariat", nama: "Bahan Cetakan" },
+    { id: "ktg-sekr-cetak", bidangId: "sekretariat", nama: "Bahan Cetak" },
     { id: "ktg-sekr-bersih", bidangId: "sekretariat", nama: "Bahan Pembersih" },
+    { id: "ktg-prmh-atk", bidangId: "perumahan", nama: "Alat Tulis Kantor" },
+    { id: "ktg-prmh-kertas", bidangId: "perumahan", nama: "Kertas dan Cover" },
+    { id: "ktg-prmh-mat", bidangId: "perumahan", nama: "Bahan Baku Bangunan dan Konstruksi" },
+    { id: "ktg-kwpm-atk", bidangId: "kawasan-permukiman", nama: "Alat Tulis Kantor" },
+    { id: "ktg-ptnh-atk", bidangId: "pertanahan", nama: "Alat Tulis Kantor" },
   ];
 
   for (const c of defaultCategories) {
@@ -185,8 +195,8 @@ async function seed() {
     });
   }
 
-  // Sample items
-  const sampleItems = [
+  // Sample items for Sekretariat
+  const sampleItemsSekr = [
     { id: "item-001", kode: "SEKR-0001", nama: "Amplop putih 90", kategoriId: "ktg-sekr-atk", satuanId: "unit-box" },
     { id: "item-002", kode: "SEKR-0002", nama: "Amplop putih 104", kategoriId: "ktg-sekr-atk", satuanId: "unit-box" },
     { id: "item-003", kode: "SEKR-0003", nama: "Binderclips Joyko 260", kategoriId: "ktg-sekr-atk", satuanId: "unit-pak" },
@@ -197,11 +207,56 @@ async function seed() {
     { id: "item-008", kode: "SEKR-0008", nama: "Kertas NCR Top", kategoriId: "ktg-sekr-kertas", satuanId: "unit-rim" },
   ];
 
-  for (const item of sampleItems) {
+  for (const item of sampleItemsSekr) {
     await client.execute({
       sql: `INSERT OR REPLACE INTO items (
         id, bidang_id, kode, nama, kategori_id, satuan_id, stok_minimum, status, created_at, updated_at
       ) VALUES (?, 'sekretariat', ?, ?, ?, ?, 0, 'ACTIVE', ?, ?)`,
+      args: [item.id, item.kode, item.nama, item.kategoriId, item.satuanId, now, now],
+    });
+  }
+
+  // Sample items for Perumahan
+  const sampleItemsPrmh = [
+    { id: "item-prmh-001", kode: "PRMH-0001", nama: "Kertas HVS 80 gsm A4 Survey", kategoriId: "ktg-prmh-kertas", satuanId: "unit-rim" },
+    { id: "item-prmh-002", kode: "PRMH-0002", nama: "Meteran Roll Baja 50m", kategoriId: "ktg-prmh-mat", satuanId: "unit-buah" },
+    { id: "item-prmh-003", kode: "PRMH-0003", nama: "Cat Semprot Penanda Survey", kategoriId: "ktg-prmh-mat", satuanId: "unit-botol" },
+  ];
+
+  for (const item of sampleItemsPrmh) {
+    await client.execute({
+      sql: `INSERT OR REPLACE INTO items (
+        id, bidang_id, kode, nama, kategori_id, satuan_id, stok_minimum, status, created_at, updated_at
+      ) VALUES (?, 'perumahan', ?, ?, ?, ?, 0, 'ACTIVE', ?, ?)`,
+      args: [item.id, item.kode, item.nama, item.kategoriId, item.satuanId, now, now],
+    });
+  }
+
+  // Sample items for Kawasan Permukiman
+  const sampleItemsKwpm = [
+    { id: "item-kwpm-001", kode: "KWPM-0001", nama: "Buku Ukur PSU Lapangan", kategoriId: "ktg-kwpm-atk", satuanId: "unit-buku" },
+    { id: "item-kwpm-002", kode: "KWPM-0002", nama: "Spidol Permanen Snowman", kategoriId: "ktg-kwpm-atk", satuanId: "unit-pak" },
+  ];
+
+  for (const item of sampleItemsKwpm) {
+    await client.execute({
+      sql: `INSERT OR REPLACE INTO items (
+        id, bidang_id, kode, nama, kategori_id, satuan_id, stok_minimum, status, created_at, updated_at
+      ) VALUES (?, 'kawasan-permukiman', ?, ?, ?, ?, 0, 'ACTIVE', ?, ?)`,
+      args: [item.id, item.kode, item.nama, item.kategoriId, item.satuanId, now, now],
+    });
+  }
+
+  // Sample items for Pertanahan
+  const sampleItemsPtnh = [
+    { id: "item-ptnh-001", kode: "PTNH-0001", nama: "Kertas Kalkir Peta A3", kategoriId: "ktg-ptnh-atk", satuanId: "unit-rim" },
+  ];
+
+  for (const item of sampleItemsPtnh) {
+    await client.execute({
+      sql: `INSERT OR REPLACE INTO items (
+        id, bidang_id, kode, nama, kategori_id, satuan_id, stok_minimum, status, created_at, updated_at
+      ) VALUES (?, 'pertanahan', ?, ?, ?, ?, 0, 'ACTIVE', ?, ?)`,
       args: [item.id, item.kode, item.nama, item.kategoriId, item.satuanId, now, now],
     });
   }

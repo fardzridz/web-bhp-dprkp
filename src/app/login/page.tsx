@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogIn, ShieldAlert, KeyRound, User, Building } from "lucide-react";
+import { LogIn, ShieldAlert, KeyRound, User } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -45,11 +45,15 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
-        {/* Header Bar */}
+        {/* Header Bar with Official Pasuruan Logo */}
         <div className="bg-emerald-700 px-8 py-8 text-white text-center relative overflow-hidden">
           <div className="absolute -right-10 -bottom-10 w-36 h-36 bg-emerald-600/30 rounded-full blur-2xl" />
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 mb-3 shadow-inner">
-            <Building className="w-7 h-7 text-white" />
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white/15 backdrop-blur-md border border-white/25 mb-3 p-2 shadow-inner">
+            <img
+              src="/logo-pasuruan.png"
+              alt="Logo Kota Pasuruan"
+              className="w-full h-full object-contain drop-shadow"
+            />
           </div>
           <h1 className="text-xl font-bold tracking-tight">SIPERSEDIA</h1>
           <p className="text-xs text-emerald-100 mt-1 font-medium leading-relaxed">

@@ -24,7 +24,26 @@ body {
   .print-only {
     display: block !important;
   }
+  /* Lembar resmi (Laporan Mutasi, Berita Acara, Lampiran) dicetak di kertas
+     F4 ukuran 215 x 330 mm posisi mendatar, sesuai dokumen mitra. */
   @page {
-    margin: 8mm;
+    size: 330mm 215mm;
+    margin: 10mm;
+  }
+  /* Baris judul tabel diulang di setiap halaman dan baris tidak terpotong. */
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .lembar-cetak {
+    font-size: 9pt;
+  }
+  /* Paket cetak: setiap lembar resmi dimulai pada halaman baru. */
+  .cetak-halaman-baru {
+    break-before: page;
+    page-break-before: always;
   }
 }

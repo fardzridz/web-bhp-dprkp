@@ -11,16 +11,19 @@ export async function GET() {
 
   // Get active bidang details
   let activeBidang = null;
-  if (session.activeBidangId) {
+  const currentBidangId = session.role === "SUPERADMIN" ? session.activeBidangId : (session.bidangId || session.activeBidangId);
+  if (currentBidangId) {
     activeBidang = await db.query.bidang.findFirst({
-      where: eq(schema.bidang.id, session.activeBidangId),
+      where: eq(schema.bidang.id, currentBidangId),
     });
   }
 
-  // Get all available bidang list
-  const allBidang = await db.query.bidang.findMany({
-    orderBy: (b, { asc }) => [asc(b.nama)],
-  });
+  // Superadmin gets all bidang, Operators get only their own bidang
+  const allBidang = session.role === "SUPERADMIN"
+    ? await db.query.bidang.findMany({
+        orderBy: (b, { asc }) => [asc(b.nama)],
+      })
+    : (activeBidang ? [activeBidang] : []);
 
   return NextResponse.json({
     authenticated: true,

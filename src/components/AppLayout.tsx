@@ -13,16 +13,19 @@ export async function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Fetch active bidang details
   let activeBidang = null;
-  if (session.activeBidangId) {
+  const currentBidangId = session.role === "SUPERADMIN" ? session.activeBidangId : (session.bidangId || session.activeBidangId);
+  if (currentBidangId) {
     activeBidang = await db.query.bidang.findFirst({
-      where: eq(schema.bidang.id, session.activeBidangId),
+      where: eq(schema.bidang.id, currentBidangId),
     });
   }
 
-  // Fetch all bidang for switcher
-  const bidangList = await db.query.bidang.findMany({
-    orderBy: (b, { asc }) => [asc(b.nama)],
-  });
+  // Superadmin gets all bidang for switching; Operators get only their own bidang
+  const bidangList = session.role === "SUPERADMIN"
+    ? await db.query.bidang.findMany({
+        orderBy: (b, { asc }) => [asc(b.nama)],
+      })
+    : (activeBidang ? [activeBidang] : []);
 
   return (
     <div className="flex min-h-screen bg-slate-50">

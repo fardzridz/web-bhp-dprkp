@@ -3,6 +3,7 @@ import { verifyPassword } from "../src/lib/auth-crypto.ts";
 
 const client = createClient({
   url: process.env.DATABASE_URL || "file:local.sqlite",
+  authToken: process.env.DATABASE_AUTH_TOKEN,
 });
 
 async function runVerification() {

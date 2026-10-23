@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // 1. BIDANG DINAS (Multi-tenant dynamic units)
 export const bidang = sqliteTable("bidang", {
@@ -63,12 +63,16 @@ export const items = sqliteTable("items", {
   status: text("status").notNull().default("ACTIVE"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
-});
+}, (t) => [
+  // Satu kode barang hanya boleh dipakai sekali per unit kerja (kode tampil di dokumen resmi).
+  uniqueIndex("items_bidang_kode_unique").on(t.bidangId, t.kode),
+]);
 
 // 6. REKANAN / VENDOR
 export const vendors = sqliteTable("vendors", {
   id: text("id").primaryKey(),
   nama: text("nama").notNull(),
+  npwp: text("npwp"), // NPWP penyedia (tercantum pada faktur e-Katalog)
   alamat: text("alamat"),
   telepon: text("telepon"),
   createdAt: integer("created_at").notNull(),
@@ -89,7 +93,10 @@ export const receipts = sqliteTable("receipts", {
   keterangan: text("keterangan"),
   createdBy: text("created_by"),
   createdAt: integer("created_at").notNull(),
-});
+}, (t) => [
+  // Nomor dokumen tidak boleh kembar di satu unit kerja.
+  uniqueIndex("receipts_bidang_nomor_unique").on(t.bidangId, t.nomorDokumen),
+]);
 
 // 8. DETAIL PENERIMAAN
 export const receiptItems = sqliteTable("receipt_items", {
@@ -105,6 +112,8 @@ export const receiptItems = sqliteTable("receipt_items", {
 export const issues = sqliteTable("issues", {
   id: text("id").primaryKey(),
   bidangId: text("bidang_id").notNull().references(() => bidang.id),
+  // "BAST" = pengeluaran biasa, "PENYESUAIAN" = koreksi hasil stock opname
+  jenis: text("jenis").notNull().default("BAST"),
   nomorDokumen: text("nomor_dokumen").notNull(), // e.g. BAST/01/KWPM/2026
   tanggal: text("tanggal").notNull(), // YYYY-MM-DD
   tglPenyerahan: text("tgl_penyerahan"),
@@ -122,7 +131,10 @@ export const issues = sqliteTable("issues", {
 
   createdBy: text("created_by"),
   createdAt: integer("created_at").notNull(),
-});
+}, (t) => [
+  // Nomor BAST tidak boleh kembar di satu unit kerja.
+  uniqueIndex("issues_bidang_nomor_unique").on(t.bidangId, t.nomorDokumen),
+]);
 
 // 10. DETAIL PENGELUARAN
 export const issueItems = sqliteTable("issue_items", {
@@ -174,4 +186,64 @@ export const activityLogs = sqliteTable("activity_logs", {
   description: text("description").notNull(),
   metadata: text("metadata"), // JSON string
   createdAt: integer("created_at").notNull(),
+});
+
+// 15. SALDO AWAL PERSEDIAAN (titik awal pembukuan per barang & tanggal)
+export const openingBalances = sqliteTable(
+  "opening_balances",
+  {
+    id: text("id").primaryKey(),
+    bidangId: text("bidang_id").notNull().references(() => bidang.id),
+    itemId: text("item_id").notNull().references(() => items.id),
+    tanggal: text("tanggal").notNull(), // tanggal berlakunya saldo awal (YYYY-MM-DD)
+    jumlah: real("jumlah").notNull(),
+    hargaSatuan: real("harga_satuan").notNull(),
+    keterangan: text("keterangan"),
+    fifoLayerId: text("fifo_layer_id"), // lapisan stok yang mewakili saldo awal ini
+    createdBy: text("created_by"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("opening_balances_bidang_item_tanggal_unique").on(t.bidangId, t.itemId, t.tanggal),
+  ]
+);
+
+// 16. STOCK OPNAME (hasil hitung fisik yang menjadi dasar penyesuaian)
+export const stockAdjustments = sqliteTable(
+  "stock_adjustments",
+  {
+    id: text("id").primaryKey(),
+    bidangId: text("bidang_id").notNull().references(() => bidang.id),
+    nomorDokumen: text("nomor_dokumen").notNull(),
+    /** Nomor resmi Berita Acara yang diisi manual (mis. 602.21/12/423.109/2026). */
+    nomorBa: text("nomor_ba"),
+    /** Tanggal penandatanganan Berita Acara (boleh beda dari tanggal opname). */
+    tanggalBa: text("tanggal_ba"),
+    tanggal: text("tanggal").notNull(),
+    keterangan: text("keterangan"),
+    // Dokumen yang lahir dari penyesuaian opname (agar bisa dibatalkan bersama).
+    issueId: text("issue_id"), // dokumen pengurangan (bila fisik < catatan)
+    receiptId: text("receipt_id"), // dokumen penambahan (bila fisik > catatan)
+    createdBy: text("created_by"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("stock_adjustments_bidang_nomor_unique").on(t.bidangId, t.nomorDokumen),
+  ]
+);
+
+// 17. RINCIAN HASIL STOCK OPNAME (kolom 11-15 formulir resmi)
+export const stockAdjustmentItems = sqliteTable("stock_adjustment_items", {
+  id: text("id").primaryKey(),
+  adjustmentId: text("adjustment_id").notNull().references(() => stockAdjustments.id),
+  itemId: text("item_id").notNull().references(() => items.id),
+  stokSistem: real("stok_sistem").notNull(),
+  nilaiSistem: real("nilai_sistem").notNull(),
+  hargaSatuanSistem: real("harga_satuan_sistem").notNull().default(0),
+  jumlahFisik: real("jumlah_fisik").notNull(),
+  nilaiFisik: real("nilai_fisik").notNull().default(0),
+  selisihJumlah: real("selisih_jumlah").notNull(),
+  selisihNilai: real("selisih_nilai").notNull().default(0),
+  kondisi: text("kondisi"),
+  keterangan: text("keterangan"),
 });

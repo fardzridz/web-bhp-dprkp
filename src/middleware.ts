@@ -9,11 +9,12 @@ const SECRET_KEY = new TextEncoder().encode(
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Static assets & api/auth/login bypass
+  // Static assets, public images & api/auth/login bypass
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth/login") ||
-    pathname === "/favicon.ico"
+    pathname === "/favicon.ico" ||
+    /\.(?:png|jpg|jpeg|gif|webp|svg|ico)$/i.test(pathname)
   ) {
     return NextResponse.next();
   }
@@ -62,5 +63,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

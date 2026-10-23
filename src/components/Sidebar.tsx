@@ -16,6 +16,9 @@ import {
   LogOut,
   Boxes,
   ClipboardList,
+  ClipboardCheck,
+  Scale,
+  Truck,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -43,31 +46,36 @@ export function Sidebar({ user }: SidebarProps) {
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Master Barang", href: "/barang", icon: Package },
     { label: "Kategori Barang", href: "/kategori", icon: Layers },
+    { label: "Master Vendor", href: "/vendor", icon: Truck },
     { label: "Barang Masuk (Penerimaan)", href: "/transaksi/masuk", icon: ArrowDownLeft },
     { label: "Barang Keluar (BAST)", href: "/transaksi/keluar", icon: ArrowUpRight },
+    { label: "Stock Opname", href: "/opname", icon: ClipboardCheck },
     { label: "Kartu Stok & Persediaan", href: "/kartu-stok", icon: Boxes },
     { label: "Laporan Resmi DPRKP", href: "/laporan", icon: FileText },
     { label: "Log Manajer", href: "/log-manajer", icon: ClipboardList },
   ];
 
   const adminItems = [
+    { label: "Saldo Awal Persediaan", href: "/saldo-awal", icon: Scale },
     { label: "Kelola Unit Kerja (Bidang)", href: "/admin/bidang", icon: Building2 },
     { label: "Kelola Pengguna", href: "/admin/users", icon: Users },
     { label: "Profil SKPD & TTD", href: "/admin/pengaturan", icon: Settings },
   ];
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-100 min-h-screen flex flex-col border-r border-slate-800 no-print flex-shrink-0">
+    <aside className="w-64 bg-slate-900 text-slate-100 h-screen sticky top-0 flex flex-col border-r border-slate-800 no-print flex-shrink-0 overflow-hidden">
       {/* Brand Header */}
       <div className="p-5 border-b border-slate-800 flex items-center space-x-3">
-        <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center font-bold text-white shadow-md">
-          BHP
-        </div>
+        <img
+          src="/logo-pasuruan.png"
+          alt="Logo Kota Pasuruan"
+          className="w-10 h-10 object-contain drop-shadow"
+        />
         <div>
           <h1 className="font-bold text-sm tracking-wide text-white leading-tight">
             SIPERSEDIA
           </h1>
-          <p className="text-xs text-slate-400">DPRKP Kab. Pasuruan</p>
+          <p className="text-xs text-slate-400">DPRKP Kota Pasuruan</p>
         </div>
       </div>
 

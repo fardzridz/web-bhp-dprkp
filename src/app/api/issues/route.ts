@@ -1,62 +1,91 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { db, schema } from "@/db";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, inArray, ne } from "drizzle-orm";
 import { recordActivityLog } from "@/lib/activity-log";
+import {
+  DataError,
+  errorResponse,
+  newId,
+  nextIssueNumber,
+  normalizeIssueRows,
+  withRetry,
+  assertItemsBelongToBidang,
+  assertIssueStock,
+  deductFifo,
+  restoreFifoUsages,
+  sanitizeBidangKode,
+} from "@/lib/inventory";
 
-interface IssueItemInput {
-  itemId: string;
-  jumlah: number;
-}
-
-export async function GET(request: Request) {
+export async function GET() {
   const session = await getSession();
-  if (!session || !session.activeBidangId) {
+  if (!session || (!session.activeBidangId && !session.bidangId)) {
     return NextResponse.json({ error: "Unauthorized / Bidang belum dipilih" }, { status: 401 });
   }
 
+  const activeBidangId =
+    session.role === "SUPERADMIN"
+      ? session.activeBidangId!
+      : (session.bidangId || session.activeBidangId)!;
+
   const issuesList = await db.query.issues.findMany({
-    where: eq(schema.issues.bidangId, session.activeBidangId),
+    where: and(
+      eq(schema.issues.bidangId, activeBidangId),
+      // Dokumen penyesuaian stock opname tidak ditampilkan di daftar BAST;
+      // riwayatnya ada di menu Stock Opname.
+      ne(schema.issues.jenis, "PENYESUAIAN")
+    ),
     orderBy: [desc(schema.issues.tanggal), desc(schema.issues.createdAt)],
   });
 
-  const results = [];
-  for (const iss of issuesList) {
-    const items = await db.query.issueItems.findMany({
-      where: eq(schema.issueItems.issueId, iss.id),
-    });
+  const issueIds = issuesList.map((i) => i.id);
+  const itemRows = issueIds.length
+    ? await db.query.issueItems.findMany({ where: inArray(schema.issueItems.issueId, issueIds) })
+    : [];
 
-    const itemIds = items.map((i) => i.itemId);
-    const itemDetails = await db.query.items.findMany({
-      where: (it, { inArray }) => inArray(it.id, itemIds.length ? itemIds : ["none"]),
-    });
-    const itemNameMap: Record<string, string> = {};
-    for (const it of itemDetails) itemNameMap[it.id] = it.nama;
+  const referencedItemIds = [...new Set(itemRows.map((i) => i.itemId))];
+  const itemDetails = referencedItemIds.length
+    ? await db.query.items.findMany({
+        where: inArray(schema.items.id, referencedItemIds),
+        columns: { id: true, nama: true },
+      })
+    : [];
+  const itemNameMap = new Map(itemDetails.map((it) => [it.id, it.nama]));
 
-    const enrichedItems = items.map((i) => ({
-      ...i,
-      itemNama: itemNameMap[i.itemId] || "-",
-    }));
-
-    const totalNilai = items.reduce((sum, i) => sum + i.totalNilaiFifo, 0);
-
-    results.push({
+  const data = issuesList.map((iss) => {
+    const rows = itemRows.filter((i) => i.issueId === iss.id);
+    return {
       ...iss,
-      totalNilai,
-      items: enrichedItems,
-    });
-  }
+      totalNilai: rows.reduce((sum, i) => sum + i.totalNilaiFifo, 0),
+      items: rows.map((i) => ({ ...i, itemNama: itemNameMap.get(i.itemId) || "-" })),
+    };
+  });
 
-  return NextResponse.json({ data: results });
+  // Nomor dokumen saran untuk form barang keluar (boleh diganti mitra).
+  const bidangInfo = await db.query.bidang.findFirst({
+    where: eq(schema.bidang.id, activeBidangId),
+    columns: { kode: true },
+  });
+  const nextNomor = await nextIssueNumber(
+    db,
+    activeBidangId,
+    sanitizeBidangKode(bidangInfo?.kode),
+    String(new Date().getFullYear())
+  );
+
+  return NextResponse.json({ data, nextNomor });
 }
 
 export async function POST(request: Request) {
   const session = await getSession();
-  if (!session || !session.activeBidangId) {
+  if (!session || (!session.activeBidangId && !session.bidangId)) {
     return NextResponse.json({ error: "Unauthorized / Bidang belum dipilih" }, { status: 401 });
   }
 
-  const activeBidangId = session.activeBidangId;
+  const activeBidangId =
+    session.role === "SUPERADMIN"
+      ? session.activeBidangId!
+      : (session.bidangId || session.activeBidangId)!;
 
   try {
     const body = await request.json();
@@ -83,156 +112,290 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Validate item ownership & stock availability
-    for (const item of items as IssueItemInput[]) {
-      const qty = Number(item.jumlah);
-      if (!item.itemId || qty <= 0) continue;
-
-      // Check if item belongs to this active bidang
-      const itemBelongs = await db.query.items.findFirst({
-        where: and(eq(schema.items.id, item.itemId), eq(schema.items.bidangId, activeBidangId)),
-      });
-      if (!itemBelongs) {
-        return NextResponse.json(
-          { error: "Barang tidak terdaftar di unit kerja Anda. Unit kerja lain tidak dapat mengeluarkan barang ini." },
-          { status: 403 }
-        );
-      }
-
-      const activeLayers = await db.query.fifoLayers.findMany({
-        where: and(
-          eq(schema.fifoLayers.bidangId, activeBidangId),
-          eq(schema.fifoLayers.itemId, item.itemId),
-          eq(schema.fifoLayers.status, "ACTIVE")
-        ),
-      });
-
-      const totalStock = activeLayers.reduce((s, l) => s + l.sisa, 0);
-      if (totalStock < qty) {
-        const itemInfo = await db.query.items.findFirst({
-          where: eq(schema.items.id, item.itemId),
-        });
-        const name = itemInfo ? itemInfo.nama : "Barang";
-        return NextResponse.json(
-          {
-            error: `Stok "${name}" tidak mencukupi. Tersedia: ${totalStock}, Diminta: ${qty}.`,
-          },
-          { status: 400 }
-        );
-      }
+    // Baris dengan barang sama digabung supaya kebutuhan stok dihitung total,
+    // bukan per baris (penyebab stok minus pada pengeluaran 5 + 5 dari stok 6).
+    const rows = normalizeIssueRows(items);
+    if (rows.length === 0) {
+      return NextResponse.json(
+        { error: "Tidak ada baris barang yang valid (periksa barang dan jumlah)" },
+        { status: 400 }
+      );
     }
 
-    // Auto-generate document number if not provided
-    let docNo = nomorDokumen?.trim();
-    if (!docNo) {
-      const year = String(tanggal).substring(0, 4);
-      const countList = await db.query.issues.findMany({
-        where: eq(schema.issues.bidangId, activeBidangId),
-      });
-      docNo = `BAST/${activeBidangId.toUpperCase().substring(0, 4)}/${year}/${String(countList.length + 1).padStart(4, "0")}`;
-    }
+    const bidangKode = sanitizeBidangKode(
+      (
+        await db.query.bidang.findFirst({
+          where: eq(schema.bidang.id, activeBidangId),
+          columns: { kode: true },
+        })
+      )?.kode
+    );
+    const manualDocNo = nomorDokumen?.trim() || null;
 
-    const issueId = "iss-" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
-    const now = Date.now();
+    const createIssue = () =>
+      db.transaction(async (tx) => {
+        await assertItemsBelongToBidang(
+          tx,
+          activeBidangId,
+          rows.map((r) => r.itemId)
+        );
+        await assertIssueStock(tx, activeBidangId, rows);
 
-    const currentBidang = await db.query.bidang.findFirst({
-      where: eq(schema.bidang.id, activeBidangId),
-    });
-    const finalNamaPenyerah = currentBidang?.namaPengurus || namaPenyerah || session.nama;
-    const finalNipPenyerah = currentBidang?.nipPengurus || nipPenyerah;
-    const finalJabatanPenyerah = currentBidang?.jabatanPengurus || jabatanPenyerah || "Pengurus Barang";
+        const docNo =
+          manualDocNo ||
+          (await nextIssueNumber(tx, activeBidangId, bidangKode, String(tanggal).substring(0, 4)));
 
-    // 2. Insert Header
-    await db.insert(schema.issues).values({
-      id: issueId,
-      bidangId: activeBidangId,
-      nomorDokumen: docNo,
-      tanggal,
-      tglPenyerahan: tglPenyerahan || tanggal,
-      penerima: String(penerima).trim(),
-      keperluan: keperluan || null,
-      keterangan: keterangan || null,
-      namaPenyerah: finalNamaPenyerah,
-      nipPenyerah: finalNipPenyerah,
-      jabatanPenyerah: finalJabatanPenyerah,
-      namaPenerima: namaPenerima || null,
-      nipPenerima: nipPenerima || null,
-      jabatanPenerima: jabatanPenerima || null,
-      createdBy: session.nama,
-      createdAt: now,
-    });
-
-    // 3. Process FIFO deduction for each item
-    for (const item of items as IssueItemInput[]) {
-      const requestedQty = Number(item.jumlah);
-      if (!item.itemId || requestedQty <= 0) continue;
-
-      const issueItemId = "issi-" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
-
-      // Fetch layers ordered oldest to newest
-      const activeLayers = await db.query.fifoLayers.findMany({
-        where: and(
-          eq(schema.fifoLayers.bidangId, activeBidangId),
-          eq(schema.fifoLayers.itemId, item.itemId),
-          eq(schema.fifoLayers.status, "ACTIVE")
-        ),
-        orderBy: [asc(schema.fifoLayers.tanggal), asc(schema.fifoLayers.id)],
-      });
-
-      let remainingNeed = requestedQty;
-      let totalItemFifoValue = 0;
-
-      for (const layer of activeLayers) {
-        if (remainingNeed <= 0) break;
-
-        const take = Math.min(layer.sisa, remainingNeed);
-        const layerValue = take * layer.hargaSatuan;
-        totalItemFifoValue += layerValue;
-        const newSisa = layer.sisa - take;
-        const newStatus = newSisa <= 0 ? "EXHAUSTED" : "ACTIVE";
-
-        // Update Layer
-        await db
-          .update(schema.fifoLayers)
-          .set({ sisa: newSisa, status: newStatus })
-          .where(eq(schema.fifoLayers.id, layer.id));
-
-        // Insert Usage
-        const usageId = "usg-" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
-        await db.insert(schema.fifoUsages).values({
-          id: usageId,
-          issueItemId,
-          fifoLayerId: layer.id,
-          jumlah: take,
-          hargaSatuan: layer.hargaSatuan,
-          nilai: layerValue,
+        const currentBidang = await tx.query.bidang.findFirst({
+          where: eq(schema.bidang.id, activeBidangId),
         });
 
-        remainingNeed -= take;
-      }
+        const issueId = newId("iss");
+        await tx.insert(schema.issues).values({
+          id: issueId,
+          bidangId: activeBidangId,
+          nomorDokumen: docNo,
+          tanggal,
+          tglPenyerahan: tglPenyerahan || tanggal,
+          penerima: String(penerima).trim(),
+          keperluan: keperluan || null,
+          keterangan: keterangan || null,
+          namaPenyerah: currentBidang?.namaPengurus || namaPenyerah || session.nama,
+          nipPenyerah: currentBidang?.nipPengurus || nipPenyerah || null,
+          jabatanPenyerah: currentBidang?.jabatanPengurus || jabatanPenyerah || "Pengurus Barang",
+          namaPenerima: namaPenerima || null,
+          nipPenerima: nipPenerima || null,
+          jabatanPenerima: jabatanPenerima || null,
+          createdBy: session.nama,
+          createdAt: Date.now(),
+        });
 
-      // Insert Issue Item
-      await db.insert(schema.issueItems).values({
-        id: issueItemId,
-        issueId,
-        itemId: item.itemId,
-        jumlah: requestedQty,
-        totalNilaiFifo: totalItemFifoValue,
+        for (const row of rows) {
+          const issueItemId = newId("issi");
+          const { usageRows, totalValue } = await deductFifo(tx, {
+            bidangId: activeBidangId,
+            itemId: row.itemId,
+            qty: row.jumlah,
+            issueItemId,
+          });
+
+          await tx.insert(schema.issueItems).values({
+            id: issueItemId,
+            issueId,
+            itemId: row.itemId,
+            jumlah: row.jumlah,
+            totalNilaiFifo: totalValue,
+          });
+
+          for (const usage of usageRows) {
+            await tx.insert(schema.fifoUsages).values(usage);
+          }
+        }
+
+        return { issueId, docNo, jumlahJenis: rows.length };
       });
-    }
+
+    // Nomor dokumen manual tidak perlu diulang: kalau bentrok, memang salah input.
+    const result = manualDocNo ? await createIssue() : await withRetry(createIssue);
+
     await recordActivityLog({
       userId: session.id,
       userName: session.nama,
       userRole: session.role,
       bidangId: activeBidangId,
       action: "INPUT_KELUAR",
-      description: `Menerbitkan BAST pengeluaran barang (${docNo}) kepada ${penerima} sejumlah ${items.length} jenis item.`,
-      metadata: { issueId, nomorDokumen: docNo, penerima },
+      description: `Menerbitkan BAST pengeluaran barang (${result.docNo}) kepada ${penerima} sejumlah ${result.jumlahJenis} jenis item.`,
+      metadata: { issueId: result.issueId, nomorDokumen: result.docNo, penerima },
     });
 
-    return NextResponse.json({ success: true, id: issueId, nomorDokumen: docNo });
+    return NextResponse.json({ success: true, id: result.issueId, nomorDokumen: result.docNo });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Gagal menyimpan pengeluaran barang";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return errorResponse(err);
+  }
+}
+
+export async function PUT(request: Request) {
+  const session = await getSession();
+  if (!session || (!session.activeBidangId && !session.bidangId)) {
+    return NextResponse.json({ error: "Unauthorized / Bidang belum dipilih" }, { status: 401 });
+  }
+
+  const activeBidangId =
+    session.role === "SUPERADMIN"
+      ? session.activeBidangId!
+      : (session.bidangId || session.activeBidangId)!;
+
+  try {
+    const body = await request.json();
+    const {
+      id,
+      nomorDokumen,
+      tanggal,
+      tglPenyerahan,
+      penerima,
+      keperluan,
+      keterangan,
+      namaPenyerah,
+      nipPenyerah,
+      jabatanPenyerah,
+      namaPenerima,
+      nipPenerima,
+      jabatanPenerima,
+      items,
+    } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "ID pengeluaran (BAST) wajib diisi" }, { status: 400 });
+    }
+
+    const rows = Array.isArray(items) && items.length > 0 ? normalizeIssueRows(items) : null;
+    if (rows && rows.length === 0) {
+      return NextResponse.json({ error: "Tidak ada baris barang yang valid" }, { status: 400 });
+    }
+
+    const result = await withRetry(() =>
+      db.transaction(async (tx) => {
+        const existing = await tx.query.issues.findFirst({
+          where: and(eq(schema.issues.id, id), eq(schema.issues.bidangId, activeBidangId)),
+        });
+        if (!existing) {
+          throw new DataError("Dokumen BAST pengeluaran tidak ditemukan di unit kerja Anda", 404);
+        }
+
+        if (rows) {
+          await assertItemsBelongToBidang(
+            tx,
+            activeBidangId,
+            rows.map((r) => r.itemId)
+          );
+
+          // 1. Kembalikan seluruh potongan FIFO dokumen ini
+          const oldIssueItems = await tx.query.issueItems.findMany({
+            where: eq(schema.issueItems.issueId, id),
+          });
+          const oldIssueItemIds = oldIssueItems.map((i) => i.id);
+          await restoreFifoUsages(tx, oldIssueItemIds);
+          if (oldIssueItemIds.length) {
+            await tx.delete(schema.issueItems).where(inArray(schema.issueItems.id, oldIssueItemIds));
+          }
+
+          // 2. Validasi ulang terhadap stok yang sudah dipulihkan
+          await assertIssueStock(tx, activeBidangId, rows);
+
+          // 3. Potong kembali sesuai rincian baru
+          for (const row of rows) {
+            const issueItemId = newId("issi");
+            const { usageRows, totalValue } = await deductFifo(tx, {
+              bidangId: activeBidangId,
+              itemId: row.itemId,
+              qty: row.jumlah,
+              issueItemId,
+            });
+
+            await tx.insert(schema.issueItems).values({
+              id: issueItemId,
+              issueId: id,
+              itemId: row.itemId,
+              jumlah: row.jumlah,
+              totalNilaiFifo: totalValue,
+            });
+
+            for (const usage of usageRows) {
+              await tx.insert(schema.fifoUsages).values(usage);
+            }
+          }
+        }
+
+        await tx
+          .update(schema.issues)
+          .set({
+            nomorDokumen: nomorDokumen ? String(nomorDokumen).trim() : existing.nomorDokumen,
+            tanggal: tanggal || existing.tanggal,
+            tglPenyerahan: tglPenyerahan || tanggal || existing.tglPenyerahan,
+            penerima: penerima !== undefined ? String(penerima).trim() : existing.penerima,
+            keperluan: keperluan !== undefined ? keperluan || null : existing.keperluan,
+            keterangan: keterangan !== undefined ? keterangan || null : existing.keterangan,
+            namaPenyerah: namaPenyerah !== undefined ? namaPenyerah || null : existing.namaPenyerah,
+            nipPenyerah: nipPenyerah !== undefined ? nipPenyerah || null : existing.nipPenyerah,
+            jabatanPenyerah:
+              jabatanPenyerah !== undefined ? jabatanPenyerah || null : existing.jabatanPenyerah,
+            namaPenerima: namaPenerima !== undefined ? namaPenerima || null : existing.namaPenerima,
+            nipPenerima: nipPenerima !== undefined ? nipPenerima || null : existing.nipPenerima,
+            jabatanPenerima:
+              jabatanPenerima !== undefined ? jabatanPenerima || null : existing.jabatanPenerima,
+          })
+          .where(eq(schema.issues.id, id));
+
+        return { docNo: nomorDokumen || existing.nomorDokumen };
+      }),
+      1
+    );
+
+    await recordActivityLog({
+      userId: session.id,
+      userName: session.nama,
+      userRole: session.role,
+      bidangId: activeBidangId,
+      action: "UBAH_KELUAR",
+      description: `Memperbarui BAST pengeluaran barang (${result.docNo}).`,
+      metadata: { issueId: id, nomorDokumen: result.docNo },
+    });
+
+    return NextResponse.json({ success: true, id, nomorDokumen: result.docNo });
+  } catch (err: unknown) {
+    return errorResponse(err);
+  }
+}
+
+export async function DELETE(request: Request) {
+  const session = await getSession();
+  if (!session || (!session.activeBidangId && !session.bidangId)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const activeBidangId =
+    session.role === "SUPERADMIN"
+      ? session.activeBidangId!
+      : (session.bidangId || session.activeBidangId)!;
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "ID pengeluaran diperlukan" }, { status: 400 });
+
+    const result = await db.transaction(async (tx) => {
+      const existing = await tx.query.issues.findFirst({
+        where: and(eq(schema.issues.id, id), eq(schema.issues.bidangId, activeBidangId)),
+      });
+      if (!existing) {
+        throw new DataError("Data pengeluaran tidak ditemukan", 404);
+      }
+
+      const issueItems = await tx.query.issueItems.findMany({
+        where: eq(schema.issueItems.issueId, id),
+      });
+      const issueItemIds = issueItems.map((i) => i.id);
+
+      await restoreFifoUsages(tx, issueItemIds);
+      if (issueItemIds.length) {
+        await tx.delete(schema.issueItems).where(inArray(schema.issueItems.id, issueItemIds));
+      }
+      await tx.delete(schema.issues).where(eq(schema.issues.id, id));
+
+      return { nomorDokumen: existing.nomorDokumen };
+    });
+
+    await recordActivityLog({
+      userId: session.id,
+      userName: session.nama,
+      userRole: session.role,
+      bidangId: activeBidangId,
+      action: "HAPUS_KELUAR",
+      description: `Membatalkan / menghapus dokumen BAST ${result.nomorDokumen}.`,
+      metadata: { issueId: id, nomorDokumen: result.nomorDokumen },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    return errorResponse(err);
   }
 }

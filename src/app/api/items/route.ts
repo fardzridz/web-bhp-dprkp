@@ -1,17 +1,30 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { db, schema } from "@/db";
-import { eq, and, desc, count } from "drizzle-orm";
+import { eq, and, count, inArray } from "drizzle-orm";
 import { recordActivityLog } from "@/lib/activity-log";
+import { DataError, errorResponse, newId, nextItemCode, withRetry } from "@/lib/inventory";
 
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session || !session.activeBidangId) {
+  if (!session || (!session.activeBidangId && !session.bidangId)) {
     return NextResponse.json({ error: "Unauthorized / Bidang belum dipilih" }, { status: 401 });
   }
+
+  const isSuperAdmin = session.role === "SUPERADMIN";
   const { searchParams } = new URL(request.url);
   const requestedBidangId = searchParams.get("bidangId");
-  const activeBidangId = requestedBidangId || session.activeBidangId;
+
+  let activeBidangId = session.activeBidangId;
+  if (isSuperAdmin && requestedBidangId) {
+    activeBidangId = requestedBidangId;
+  } else if (!isSuperAdmin) {
+    activeBidangId = session.bidangId || session.activeBidangId;
+  }
+
+  if (!activeBidangId) {
+    return NextResponse.json({ error: "Bidang tidak valid" }, { status: 400 });
+  }
 
   // 1. Fetch items
   const items = await db.query.items.findMany({
@@ -51,12 +64,45 @@ export async function GET(request: Request) {
     valueMap[layer.itemId] = (valueMap[layer.itemId] || 0) + layer.sisa * layer.hargaSatuan;
   }
 
+  // 5. Harga beli terakhir per barang (tanpa dokumen penyesuaian stock opname).
+  //    Dipakai form transaksi untuk mengisi harga satuan otomatis.
+  const receiptList = await db.query.receipts.findMany({
+    where: eq(schema.receipts.bidangId, activeBidangId),
+    columns: { id: true, tanggal: true },
+  });
+  const adjustmentLinks = await db.query.stockAdjustments.findMany({
+    where: eq(schema.stockAdjustments.bidangId, activeBidangId),
+    columns: { receiptId: true },
+  });
+  const receiptPenyesuaian = new Set(
+    adjustmentLinks.map((a) => a.receiptId).filter((id): id is string => Boolean(id))
+  );
+  const tanggalReceipt = new Map(receiptList.map((r) => [r.id, r.tanggal] as const));
+  const receiptBeliIds = receiptList.filter((r) => !receiptPenyesuaian.has(r.id)).map((r) => r.id);
+  const barisBeli = receiptBeliIds.length
+    ? await db.query.receiptItems.findMany({
+        where: inArray(schema.receiptItems.receiptId, receiptBeliIds),
+        columns: { itemId: true, receiptId: true, hargaSatuan: true },
+      })
+    : [];
+
+  const hargaTerakhirMap = new Map<string, { hargaSatuan: number; tanggal: string | null }>();
+  for (const baris of barisBeli) {
+    const tanggal = tanggalReceipt.get(baris.receiptId) ?? null;
+    const tersimpan = hargaTerakhirMap.get(baris.itemId);
+    if (!tersimpan || (tanggal && (!tersimpan.tanggal || tanggal >= tersimpan.tanggal))) {
+      hargaTerakhirMap.set(baris.itemId, { hargaSatuan: baris.hargaSatuan, tanggal });
+    }
+  }
+
   const enrichedItems = items.map((item) => ({
     ...item,
     kategoriNama: item.kategoriId ? categoryMap[item.kategoriId] || "-" : "-",
     satuanNama: item.satuanId ? unitMap[item.satuanId] || "-" : "-",
     stok: stockMap[item.id] || 0,
     nilaiPersediaan: valueMap[item.id] || 0,
+    hargaTerakhir: hargaTerakhirMap.get(item.id)?.hargaSatuan ?? null,
+    hargaTerakhirTanggal: hargaTerakhirMap.get(item.id)?.tanggal ?? null,
   }));
 
   return NextResponse.json({ data: enrichedItems });
@@ -64,73 +110,83 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const session = await getSession();
-  if (!session || !session.activeBidangId) {
+  if (!session || (!session.activeBidangId && !session.bidangId)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const activeBidangId =
+    session.role === "SUPERADMIN"
+      ? session.activeBidangId!
+      : (session.bidangId || session.activeBidangId)!;
 
   try {
     const body = await request.json();
     const { kode, nama, kategoriId, satuanId, stokMinimum } = body;
 
-    if (!nama || !nama.trim()) {
+    if (!nama || !String(nama).trim()) {
       return NextResponse.json({ error: "Nama barang wajib diisi" }, { status: 400 });
     }
 
-    const activeBidangId = session.activeBidangId;
+    const cleanNama = String(nama).trim();
+    const manualKode = kode?.trim() || null;
 
-    // Get active bidang to use its specific code prefix
-    const currentBidang = await db.query.bidang.findFirst({
-      where: eq(schema.bidang.id, activeBidangId),
-    });
-    const prefix = currentBidang?.kode ? currentBidang.kode.toUpperCase() : "BRG";
+    const createItem = () =>
+      db.transaction(async (tx) => {
+        const currentBidang = await tx.query.bidang.findFirst({
+          where: eq(schema.bidang.id, activeBidangId),
+          columns: { kode: true },
+        });
+        const prefix = (currentBidang?.kode || "BRG").toUpperCase();
 
-    // Generate kode if not provided
-    let itemKode = kode?.trim();
-    if (!itemKode) {
-      const existingItems = await db.query.items.findMany({
-        where: eq(schema.items.bidangId, activeBidangId),
+        const itemKode = manualKode || (await nextItemCode(tx, activeBidangId, prefix));
+        const id = newId("item");
+        const now = Date.now();
+
+        await tx.insert(schema.items).values({
+          id,
+          bidangId: activeBidangId,
+          kode: itemKode,
+          nama: cleanNama,
+          kategoriId: kategoriId || null,
+          satuanId: satuanId || null,
+          stokMinimum: Number(stokMinimum) || 0,
+          status: "ACTIVE",
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        return { id, itemKode };
       });
-      const nextNumber = existingItems.length + 1;
-      itemKode = `${prefix}-${String(nextNumber).padStart(4, "0")}`;
-    }
 
-    const id = "item-" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
-    const now = Date.now();
+    // Kode manual tidak perlu diulang: kalau bentrok, memang salah input.
+    const created = manualKode ? await createItem() : await withRetry(createItem);
 
-    await db.insert(schema.items).values({
-      id,
-      bidangId: activeBidangId,
-      kode: itemKode,
-      nama: String(nama).trim(),
-      kategoriId: kategoriId || null,
-      satuanId: satuanId || null,
-      stokMinimum: Number(stokMinimum) || 0,
-      status: "ACTIVE",
-      createdAt: now,
-      updatedAt: now,
-    });
     await recordActivityLog({
       userId: session.id,
       userName: session.nama,
       userRole: session.role,
       bidangId: activeBidangId,
       action: "TAMBAH_BARANG",
-      description: `Menambahkan master barang baru: "${nama}" (${itemKode}).`,
-      metadata: { itemId: id, kode: itemKode, nama },
+      description: `Menambahkan master barang baru: "${cleanNama}" (${created.itemKode}).`,
+      metadata: { itemId: created.id, kode: created.itemKode, nama: cleanNama },
     });
 
-    return NextResponse.json({ success: true, id });
+    return NextResponse.json({ success: true, id: created.id, kode: created.itemKode });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Gagal menambah master barang";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
 export async function PUT(request: Request) {
   const session = await getSession();
-  if (!session || !session.activeBidangId) {
+  if (!session || (!session.activeBidangId && !session.bidangId)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const activeBidangId =
+    session.role === "SUPERADMIN"
+      ? session.activeBidangId!
+      : (session.bidangId || session.activeBidangId)!;
 
   try {
     const body = await request.json();
@@ -140,75 +196,101 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "ID dan Nama barang wajib diisi" }, { status: 400 });
     }
 
-    await db
-      .update(schema.items)
-      .set({
-        kode: String(kode).trim(),
-        nama: String(nama).trim(),
-        kategoriId: kategoriId || null,
-        satuanId: satuanId || null,
-        stokMinimum: Number(stokMinimum) || 0,
-        status: status || "ACTIVE",
-        updatedAt: Date.now(),
-      })
-      .where(and(eq(schema.items.id, id), eq(schema.items.bidangId, session.activeBidangId)));
+    const cleanNama = String(nama).trim();
+    const cleanKode = kode ? String(kode).trim() : "";
+
+    await db.transaction(async (tx) => {
+      const existing = await tx.query.items.findFirst({
+        where: and(eq(schema.items.id, id), eq(schema.items.bidangId, activeBidangId)),
+      });
+      if (!existing) {
+        throw new DataError("Barang tidak ditemukan di unit kerja Anda", 404);
+      }
+
+      await tx
+        .update(schema.items)
+        .set({
+          kode: cleanKode || existing.kode,
+          nama: cleanNama,
+          kategoriId: kategoriId || null,
+          satuanId: satuanId || null,
+          stokMinimum: Number(stokMinimum) || 0,
+          status: status || "ACTIVE",
+          updatedAt: Date.now(),
+        })
+        .where(and(eq(schema.items.id, id), eq(schema.items.bidangId, activeBidangId)));
+    });
+
     await recordActivityLog({
       userId: session.id,
       userName: session.nama,
       userRole: session.role,
-      bidangId: session.activeBidangId,
+      bidangId: activeBidangId,
       action: "UBAH_BARANG",
-      description: `Memperbarui master barang: "${nama}" (${kode}).`,
-      metadata: { itemId: id, kode, nama },
+      description: `Memperbarui master barang: "${cleanNama}" (${cleanKode || "-"}).`,
+      metadata: { itemId: id, kode: cleanKode, nama: cleanNama },
     });
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Gagal memperbarui barang";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return errorResponse(err);
   }
 }
 
 export async function DELETE(request: Request) {
   const session = await getSession();
-  if (!session || !session.activeBidangId) {
+  if (!session || (!session.activeBidangId && !session.bidangId)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const activeBidangId =
+    session.role === "SUPERADMIN"
+      ? session.activeBidangId!
+      : (session.bidangId || session.activeBidangId)!;
 
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "ID barang diperlukan" }, { status: 400 });
 
-    // Check if item has FIFO layers or transactions
-    const [layerCount] = await db
-      .select({ count: count() })
-      .from(schema.fifoLayers)
-      .where(eq(schema.fifoLayers.itemId, id));
+    const deleted = await db.transaction(async (tx) => {
+      const existing = await tx.query.items.findFirst({
+        where: and(eq(schema.items.id, id), eq(schema.items.bidangId, activeBidangId)),
+      });
+      if (!existing) {
+        throw new DataError("Barang tidak ditemukan di unit kerja Anda", 404);
+      }
 
-    if (layerCount && layerCount.count > 0) {
-      return NextResponse.json(
-        { error: "Barang tidak dapat dihapus karena sudah memiliki riwayat persediaan/transaksi. Anda bisa mengubah statusnya menjadi NONAKTIF." },
-        { status: 400 }
-      );
-    }
+      const [layerCount] = await tx
+        .select({ count: count() })
+        .from(schema.fifoLayers)
+        .where(eq(schema.fifoLayers.itemId, id));
 
-    await db
-      .delete(schema.items)
-      .where(and(eq(schema.items.id, id), eq(schema.items.bidangId, session.activeBidangId)));
+      if (layerCount && layerCount.count > 0) {
+        throw new DataError(
+          "Barang tidak dapat dihapus karena sudah memiliki riwayat persediaan/transaksi. Anda bisa mengubah statusnya menjadi NONAKTIF."
+        );
+      }
+
+      await tx
+        .delete(schema.items)
+        .where(and(eq(schema.items.id, id), eq(schema.items.bidangId, activeBidangId)));
+
+      return { nama: existing.nama, kode: existing.kode };
+    });
+
     await recordActivityLog({
       userId: session.id,
       userName: session.nama,
       userRole: session.role,
-      bidangId: session.activeBidangId,
+      bidangId: activeBidangId,
       action: "HAPUS_BARANG",
-      description: `Menghapus master barang ID: ${id}.`,
-      metadata: { itemId: id },
+      description: `Menghapus master barang "${deleted.nama}" (${deleted.kode}).`,
+      metadata: { itemId: id, kode: deleted.kode },
     });
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Gagal menghapus barang";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return errorResponse(err);
   }
 }

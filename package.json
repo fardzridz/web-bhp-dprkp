@@ -9,8 +9,11 @@
     "start": "next start",
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:seed": "node scripts/seed.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:repair-stock": "node scripts/repair-stock.mjs",
+    "db:seed": "node scripts/seed.mjs",
+    "db:rapikan-kategori": "node scripts/rapikan-kategori.mjs",
+    "db:import-master": "node scripts/import-master-resmi.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

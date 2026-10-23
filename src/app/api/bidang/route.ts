@@ -9,6 +9,18 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Non-superadmin is strictly restricted to their own assigned bidang
+  if (session.role !== "SUPERADMIN") {
+    const myBidangId = session.bidangId || session.activeBidangId;
+    if (!myBidangId) {
+      return NextResponse.json({ data: [] });
+    }
+    const list = await db.query.bidang.findMany({
+      where: eq(schema.bidang.id, myBidangId),
+    });
+    return NextResponse.json({ data: list });
+  }
+
   const list = await db.query.bidang.findMany({
     orderBy: (b, { asc }) => [asc(b.nama)],
   });
@@ -24,20 +36,25 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { nama, kode, deskripsi, namaAtasan, nipAtasan, jabatanAtasan, pangkatAtasan, namaPengurus, nipPengurus, jabatanPengurus, pangkatPengurus } = body;
+    const { id, nama, kode, deskripsi, namaAtasan, nipAtasan, jabatanAtasan, pangkatAtasan, namaPengurus, nipPengurus, jabatanPengurus, pangkatPengurus } = body;
 
     if (!nama || !kode) {
       return NextResponse.json({ error: "Nama dan Kode bidang wajib diisi" }, { status: 400 });
     }
 
-    const cleanKode = String(kode).trim().toUpperCase();
-    const id = cleanKode.toLowerCase().replace(/[^a-z0-9]/g, "-") + "-" + Date.now().toString(36);
+    const bidangId = (id || kode).toLowerCase().replace(/[^a-z0-9]/g, "-");
+    const existing = await db.query.bidang.findFirst({
+      where: eq(schema.bidang.kode, kode.toUpperCase()),
+    });
+    if (existing) {
+      return NextResponse.json({ error: "Kode bidang sudah digunakan" }, { status: 400 });
+    }
 
     const now = Date.now();
     await db.insert(schema.bidang).values({
-      id,
+      id: bidangId,
       nama: String(nama).trim(),
-      kode: cleanKode,
+      kode: String(kode).trim().toUpperCase(),
       deskripsi: deskripsi || null,
       namaAtasan: namaAtasan || null,
       nipAtasan: nipAtasan || null,
@@ -51,9 +68,9 @@ export async function POST(request: Request) {
       updatedAt: now,
     });
 
-    return NextResponse.json({ success: true, id });
+    return NextResponse.json({ success: true, id: bidangId });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Gagal menambahkan bidang";
+    const msg = err instanceof Error ? err.message : "Gagal menambah bidang";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -69,7 +86,7 @@ export async function PUT(request: Request) {
     const { id, nama, kode, deskripsi, namaAtasan, nipAtasan, jabatanAtasan, pangkatAtasan, namaPengurus, nipPengurus, jabatanPengurus, pangkatPengurus } = body;
 
     if (!id || !nama || !kode) {
-      return NextResponse.json({ error: "ID, Nama dan Kode wajib diisi" }, { status: 400 });
+      return NextResponse.json({ error: "ID, Nama, dan Kode bidang wajib diisi" }, { status: 400 });
     }
 
     await db
@@ -106,17 +123,19 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
-    if (!id) return NextResponse.json({ error: "ID bidang diperlukan" }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: "ID bidang diperlukan" }, { status: 400 });
+    }
 
-    // Check if any items belong to this bidang
-    const [itemCount] = await db
-      .select({ count: count() })
+    // Check if items or users are associated
+    const itemsCount = await db
+      .select({ val: count() })
       .from(schema.items)
       .where(eq(schema.items.bidangId, id));
 
-    if (itemCount && itemCount.count > 0) {
+    if (itemsCount[0].val > 0) {
       return NextResponse.json(
-        { error: "Bidang tidak dapat dihapus karena masih memiliki master barang." },
+        { error: `Tidak dapat menghapus bidang karena masih memiliki ${itemsCount[0].val} item barang.` },
         { status: 400 }
       );
     }

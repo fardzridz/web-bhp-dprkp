@@ -1,6 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import NumberInput from "@/components/NumberInput";
+import ItemCombobox, { type ItemPilihan } from "@/components/ItemCombobox";
+import { formatAngka, formatRupiah } from "@/lib/format";
+import { bacaDraft, hapusDraft, jamLokal, useDraftOtomatis } from "@/lib/draft";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -12,6 +16,8 @@ import {
   Printer,
   FileCheck,
   Building,
+  Pencil,
+  Eye,
 } from "lucide-react";
 
 interface IssueRecord {
@@ -21,6 +27,7 @@ interface IssueRecord {
   tglPenyerahan: string | null;
   penerima: string;
   keperluan: string | null;
+  keterangan: string | null;
   namaPenyerah: string | null;
   nipPenyerah: string | null;
   jabatanPenyerah: string | null;
@@ -30,18 +37,11 @@ interface IssueRecord {
   totalNilai: number;
   items: Array<{
     id: string;
+    itemId: string;
     itemNama: string;
     jumlah: number;
     totalNilaiFifo: number;
   }>;
-}
-
-interface ItemOption {
-  id: string;
-  kode: string;
-  nama: string;
-  satuanNama: string;
-  stok: number;
 }
 
 interface BidangInfo {
@@ -52,30 +52,64 @@ interface BidangInfo {
   jabatanPengurus: string | null;
 }
 
+/** Isian dokumen BAST yang disimpan sebagai draft. */
+interface FormHeader {
+  nomorDokumen: string;
+  tanggal: string;
+  tglPenyerahan: string;
+  penerima: string;
+  keperluan: string;
+  keterangan: string;
+  namaPenyerah: string;
+  nipPenyerah: string;
+  jabatanPenyerah: string;
+  namaPenerima: string;
+  nipPenerima: string;
+  jabatanPenerima: string;
+}
+
 interface FormItemRow {
   itemId: string;
-  jumlah: number;
+  /** null = belum diisi (bukan 0), supaya kolom bisa benar-benar dikosongkan. */
+  jumlah: number | null;
 }
+
+interface DraftKeluar {
+  formData: FormHeader;
+  formRows: FormItemRow[];
+}
+
+const KUNCI_DRAFT = "pengeluaran";
+const hariIni = () => new Date().toISOString().split("T")[0];
 
 export default function TransaksiKeluarPage() {
   const [issues, setIssues] = useState<IssueRecord[]>([]);
-  const [items, setItems] = useState<ItemOption[]>([]);
+  const [items, setItems] = useState<ItemPilihan[]>([]);
   const [bidang, setBidang] = useState<BidangInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Draft isian yang belum selesai (disimpan di browser)
+  const [draftWaktu, setDraftWaktu] = useState<string | null>(null);
+  const [draftDibuang, setDraftDibuang] = useState(false);
+  const [draftHalaman, setDraftHalaman] = useState<string | null>(null);
+
+  // Nomor dokumen saran dari sistem (dihitung dari nomor terakhir yang dipakai).
+  const [nomorSaran, setNomorSaran] = useState("");
+
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingIssueId, setEditingIssueId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Detail Modal for viewing & printing BAST
   const [viewingIssue, setViewingIssue] = useState<IssueRecord | null>(null);
 
   // Form Fields
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormHeader>({
     nomorDokumen: "",
-    tanggal: new Date().toISOString().split("T")[0],
-    tglPenyerahan: new Date().toISOString().split("T")[0],
+    tanggal: hariIni(),
+    tglPenyerahan: hariIni(),
     penerima: "",
     keperluan: "",
     keterangan: "",
@@ -87,9 +121,7 @@ export default function TransaksiKeluarPage() {
     jabatanPenerima: "Penerima Barang",
   });
 
-  const [formRows, setFormRows] = useState<FormItemRow[]>([
-    { itemId: "", jumlah: 1 },
-  ]);
+  const [formRows, setFormRows] = useState<FormItemRow[]>([{ itemId: "", jumlah: 1 }]);
 
   const fetchData = async () => {
     try {
@@ -109,6 +141,7 @@ export default function TransaksiKeluarPage() {
 
       setIssues(issJson.data);
       setItems(iJson.data);
+      setNomorSaran(typeof issJson.nextNomor === "string" ? issJson.nextNomor : "");
       if (meJson.activeBidang) {
         setBidang(meJson.activeBidang);
       }
@@ -123,39 +156,125 @@ export default function TransaksiKeluarPage() {
     fetchData();
   }, []);
 
-  const openCreateModal = () => {
-    // Pick the first item that has stock > 0
-    const availableItem = items.find((it) => it.stok > 0) || items[0];
+  // Simpan draft otomatis selama mengisi dokumen baru.
+  const adaIsi =
+    editingIssueId === null &&
+    (formRows.some((r) => r.itemId !== "") ||
+      formData.penerima.trim() !== "" ||
+      formData.keperluan.trim() !== "" ||
+      formData.keterangan.trim() !== "");
 
-    setFormData({
-      nomorDokumen: "",
-      tanggal: new Date().toISOString().split("T")[0],
-      tglPenyerahan: new Date().toISOString().split("T")[0],
-      penerima: "",
-      keperluan: "",
-      keterangan: "",
-      namaPenyerah: bidang?.namaPengurus || "",
-      nipPenyerah: bidang?.nipPengurus || "",
-      jabatanPenyerah: bidang?.jabatanPengurus || "Pengurus Barang Pembantu",
-      namaPenerima: "",
-      nipPenerima: "",
-      jabatanPenerima: "Penerima Barang",
-    });
-    setFormRows([
-      { itemId: availableItem?.id || "", jumlah: 1 },
-    ]);
+  const { tersimpan: draftOtomatis } = useDraftOtomatis<DraftKeluar>(
+    KUNCI_DRAFT,
+    isModalOpen && editingIssueId === null && !draftDibuang && adaIsi,
+    { formData, formRows }
+  );
+
+  // Beri tahu di daftar dokumen bila masih ada isian yang belum tersimpan.
+  useEffect(() => {
+    if (isModalOpen) return;
+    const draft = bacaDraft<DraftKeluar>(KUNCI_DRAFT);
+    setDraftHalaman(draft?.data?.formRows?.length ? jamLokal(draft.disimpanPada) : null);
+  }, [isModalOpen]);
+
+  const formDasar = (): FormHeader => ({
+    nomorDokumen: nomorSaran,
+    tanggal: hariIni(),
+    tglPenyerahan: hariIni(),
+    penerima: "",
+    keperluan: "",
+    keterangan: "",
+    namaPenyerah: bidang?.namaPengurus || "",
+    nipPenyerah: bidang?.nipPengurus || "",
+    jabatanPenyerah: bidang?.jabatanPengurus || "Pengurus Barang Pembantu",
+    namaPenerima: "",
+    nipPenerima: "",
+    jabatanPenerima: "Penerima Barang",
+  });
+
+  const barisDasar = (): FormItemRow[] => [{ itemId: "", jumlah: 1 }];
+
+  const openCreateModal = () => {
+    setEditingIssueId(null);
+    setDraftDibuang(false);
+
+    // Lanjutkan isian yang belum selesai (halaman sempat tertutup / ter-refresh).
+    const draft = bacaDraft<DraftKeluar>(KUNCI_DRAFT);
+    if (draft?.data?.formRows?.length) {
+      setFormData({ ...formDasar(), ...draft.data.formData });
+      setFormRows(draft.data.formRows);
+      setDraftWaktu(jamLokal(draft.disimpanPada));
+    } else {
+      setFormData(formDasar());
+      setFormRows(barisDasar());
+      setDraftWaktu(null);
+    }
     setIsModalOpen(true);
   };
 
-  const handleRowChange = (index: number, field: keyof FormItemRow, value: string | number) => {
-    const updated = [...formRows];
-    updated[index] = { ...updated[index], [field]: value };
-    setFormRows(updated);
+  const buangDraft = () => {
+    hapusDraft(KUNCI_DRAFT);
+    setDraftWaktu(null);
+    setDraftDibuang(true);
+    setDraftHalaman(null);
+    setFormData(formDasar());
+    setFormRows(barisDasar());
   };
 
+  const openEditModal = (iss: IssueRecord) => {
+    setEditingIssueId(iss.id);
+    setDraftWaktu(null);
+    setDraftDibuang(true);
+    setFormData({
+      nomorDokumen: iss.nomorDokumen,
+      tanggal: iss.tanggal,
+      tglPenyerahan: iss.tglPenyerahan || iss.tanggal,
+      penerima: iss.penerima,
+      keperluan: iss.keperluan || "",
+      keterangan: iss.keterangan || "",
+      namaPenyerah: iss.namaPenyerah || bidang?.namaPengurus || "",
+      nipPenyerah: iss.nipPenyerah || bidang?.nipPengurus || "",
+      jabatanPenyerah: iss.jabatanPenyerah || bidang?.jabatanPengurus || "Pengurus Barang Pembantu",
+      namaPenerima: iss.namaPenerima || "",
+      nipPenerima: iss.nipPenerima || "",
+      jabatanPenerima: iss.jabatanPenerima || "Penerima Barang",
+    });
+
+    if (iss.items && iss.items.length > 0) {
+      setFormRows(
+        iss.items.map((it) => ({
+          itemId: it.itemId,
+          jumlah: it.jumlah,
+        }))
+      );
+    } else {
+      const availableItem = items.find((it) => it.stok > 0) || items[0];
+      setFormRows([{ itemId: availableItem?.id || "", jumlah: 1 }]);
+    }
+
+    if (viewingIssue) setViewingIssue(null);
+    setIsModalOpen(true);
+  };
+
+  const handleRowChange = (index: number, patch: Partial<FormItemRow>) => {
+    setFormRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  };
+
+  /** Memilih barang untuk baris ini. */
+  const handlePilihBarang = (index: number, itemId: string) => {
+    setFormRows((rows) =>
+      rows.map((row, i) => (i === index && row.itemId !== itemId ? { ...row, itemId } : row))
+    );
+  };
+
+  /** Total jumlah keluar per barang (untuk memeriksa stok). */
+  const totalPerBarang = (itemId: string) =>
+    formRows
+      .filter((r) => r.itemId === itemId)
+      .reduce((sum, r) => sum + (r.jumlah ?? 0), 0);
+
   const addRow = () => {
-    const availableItem = items.find((it) => it.stok > 0) || items[0];
-    setFormRows([...formRows, { itemId: availableItem?.id || "", jumlah: 1 }]);
+    setFormRows([...formRows, { itemId: "", jumlah: 1 }]);
   };
 
   const removeRow = (index: number) => {
@@ -163,25 +282,72 @@ export default function TransaksiKeluarPage() {
     setFormRows(formRows.filter((_, i) => i !== index));
   };
 
+  /** Memeriksa isian sebelum dikirim, supaya mitra tahu baris mana yang kurang. */
+  const validasiIsian = (): string | null => {
+    if (!formData.penerima.trim()) return "Nama penerima / bagian penerima wajib diisi.";
+    if (formRows.length === 0) return "Tambahkan minimal satu barang.";
+    for (let i = 0; i < formRows.length; i += 1) {
+      const baris = formRows[i];
+      if (!baris.itemId) return `Baris ${i + 1}: barang belum dipilih.`;
+      if (!baris.jumlah || baris.jumlah <= 0) return `Baris ${i + 1}: jumlah harus lebih dari 0.`;
+    }
+
+    // Saat membuat dokumen baru, periksa stok per barang (baris kembar dihitung sekali).
+    if (!editingIssueId) {
+      const sudahDiperiksa = new Set<string>();
+      for (const baris of formRows) {
+        if (sudahDiperiksa.has(baris.itemId)) continue;
+        sudahDiperiksa.add(baris.itemId);
+        const barang = items.find((it) => it.id === baris.itemId);
+        if (!barang) continue;
+        const diminta = totalPerBarang(baris.itemId);
+        if (diminta > barang.stok) {
+          return `Stok ${barang.nama} tidak cukup: tersedia ${formatAngka(barang.stok)}, diminta ${formatAngka(diminta)}.`;
+        }
+      }
+    }
+    return null;
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const masalah = validasiIsian();
+    if (masalah) {
+      setError(masalah);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
     try {
+      const payload: Record<string, unknown> = {
+        ...formData,
+        items: formRows.map((baris) => ({
+          itemId: baris.itemId,
+          jumlah: baris.jumlah ?? 0,
+        })),
+      };
+
+      if (editingIssueId) {
+        payload.id = editingIssueId;
+      }
+
       const res = await fetch("/api/issues", {
-        method: "POST",
+        method: editingIssueId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formData,
-          items: formRows,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
 
+      hapusDraft(KUNCI_DRAFT);
+      setDraftWaktu(null);
+      setDraftHalaman(null);
       setIsModalOpen(false);
+      setEditingIssueId(null);
       fetchData();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Gagal menyimpan pengeluaran");
@@ -190,12 +356,19 @@ export default function TransaksiKeluarPage() {
     }
   };
 
-  const formatRupiah = (num: number) => {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      maximumFractionDigits: 0,
-    }).format(num);
+  const handleDelete = async (iss: IssueRecord) => {
+    if (!confirm(`Hapus dan batalkan dokumen BAST "${iss.nomorDokumen}"? Stok barang akan dikembalikan ke persediaan.`)) return;
+
+    try {
+      const res = await fetch(`/api/issues?id=${iss.id}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+
+      if (viewingIssue?.id === iss.id) setViewingIssue(null);
+      fetchData();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Gagal menghapus pengeluaran");
+    }
   };
 
   return (
@@ -207,7 +380,7 @@ export default function TransaksiKeluarPage() {
             <span>Pengeluaran Barang (BAST & Bukti Serah Terima)</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Pencatatan distribusi barang persediaan ke seksi / pegawai beserta pemotongan stok metode FIFO.
+            Pencatatan distribusi barang persediaan ke seksi / pegawai beserta pemotongan stok metode FIFO di lingkungan DPRKP Kota Pasuruan.
           </p>
         </div>
         <button
@@ -219,6 +392,22 @@ export default function TransaksiKeluarPage() {
           <span>Buat Pengeluaran / BAST</span>
         </button>
       </div>
+
+      {draftHalaman && (
+        <div className="p-4 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 text-sm flex items-start justify-between gap-3">
+          <span>
+            Ada isian pengeluaran yang <strong>belum selesai disimpan</strong> (draft tersimpan pukul {draftHalaman}).
+            Klik &ldquo;Catat Pengeluaran Baru&rdquo; untuk melanjutkannya.
+          </span>
+          <button
+            type="button"
+            onClick={buangDraft}
+            className="text-xs font-semibold text-sky-700 hover:text-sky-900 underline whitespace-nowrap"
+          >
+            Buang draft
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-start space-x-2">
@@ -270,13 +459,29 @@ export default function TransaksiKeluarPage() {
                     <td className="px-6 py-4 text-right font-mono font-bold text-slate-800">
                       {formatRupiah(iss.totalNilai)}
                     </td>
-                    <td className="px-6 py-4 text-right whitespace-nowrap space-x-2">
+                    <td className="px-6 py-4 text-right whitespace-nowrap space-x-1.5">
                       <button
                         onClick={() => setViewingIssue(iss)}
-                        className="px-3 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition inline-flex items-center space-x-1"
+                        className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition inline-flex items-center space-x-1"
+                        title="Lihat & Cetak BAST"
                       >
                         <FileCheck className="w-3.5 h-3.5" />
-                        <span>Lihat & Cetak BAST</span>
+                        <span>BAST</span>
+                      </button>
+                      <button
+                        onClick={() => openEditModal(iss)}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold transition inline-flex items-center space-x-1"
+                        title="Edit Dokumen BAST"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(iss)}
+                        className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition inline-flex items-center"
+                        title="Hapus BAST & Kembalikan Stok"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </td>
                   </tr>
@@ -298,8 +503,15 @@ export default function TransaksiKeluarPage() {
               </h3>
               <div className="flex items-center space-x-2">
                 <button
-                  onClick={() => window.print()}
+                  onClick={() => openEditModal(viewingIssue)}
                   className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center space-x-1.5 transition shadow"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Edit Data Ini</span>
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center space-x-1.5 transition shadow"
                 >
                   <Printer className="w-4 h-4" />
                   <span>Cetak Dokumen</span>
@@ -311,93 +523,115 @@ export default function TransaksiKeluarPage() {
             </div>
 
             {/* Print Friendly BAST Document */}
-            <div className="p-8 space-y-6 text-slate-900 font-sans print:p-0">
+            <div className="p-8 space-y-6 text-slate-800 print:p-0 print:border-none">
+              {/* Kop Surat BAST */}
               <div className="text-center border-b-2 border-slate-800 pb-4">
-                <h2 className="text-sm font-semibold tracking-wider uppercase text-slate-600">
-                  PEMERINTAH KABUPATEN PASURUAN
-                </h2>
-                <h1 className="text-base font-bold uppercase tracking-wide">
-                  DINAS PERUMAHAN RAKYAT DAN KAWASAN PERMUKIMAN
-                </h1>
+                <div className="flex items-center justify-center space-x-3 mb-1">
+                  <img src="/logo-pasuruan.png" alt="Logo Kota Pasuruan" className="w-12 h-12 object-contain" />
+                  <div>
+                    <h2 className="text-xs font-semibold tracking-wider uppercase text-slate-600">
+                      PEMERINTAH KOTA PASURUAN
+                    </h2>
+                    <h1 className="text-base font-bold uppercase tracking-wide">
+                      DINAS PERUMAHAN RAKYAT DAN KAWASAN PERMUKIMAN
+                    </h1>
+                  </div>
+                </div>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  Kompleks Perkantoran Pemerintah Kabupaten Pasuruan, Jawa Timur
+                  Kompleks Perkantoran Pemerintah Kota Pasuruan, Jawa Timur
                 </p>
                 <div className="mt-3 font-bold text-sm tracking-wide border-t border-slate-300 pt-2 uppercase">
                   BERITA ACARA SERAH TERIMA BARANG (BAST)
                 </div>
-                <div className="text-xs font-mono font-medium text-slate-600">
+                <div className="text-xs font-mono font-semibold text-slate-700 mt-0.5">
                   Nomor: {viewingIssue.nomorDokumen}
                 </div>
               </div>
 
-              <div className="text-xs space-y-2 leading-relaxed">
-                <p>
-                  Pada hari ini tanggal <strong>{viewingIssue.tanggal}</strong>, kami yang bertanda tangan di bawah ini:
-                </p>
-                <div className="grid grid-cols-2 gap-4 bg-slate-50 print:bg-transparent p-3 rounded-lg border border-slate-200">
-                  <div>
-                    <div className="font-bold text-slate-700 mb-1">PIHAK PERTAMA (Yang Menyerahkan):</div>
-                    <div>Nama: <strong>{viewingIssue.namaPenyerah || "-"}</strong></div>
-                    <div>NIP: {viewingIssue.nipPenyerah || "-"}</div>
-                    <div>Jabatan: {viewingIssue.jabatanPenyerah || "Pengurus Barang"}</div>
-                  </div>
-                  <div>
-                    <div className="font-bold text-slate-700 mb-1">PIHAK KEDUA (Yang Menerima):</div>
-                    <div>Nama / Unit: <strong>{viewingIssue.penerima}</strong></div>
-                    <div>NIP: {viewingIssue.nipPenerima || "-"}</div>
-                    <div>Jabatan: {viewingIssue.jabatanPenerima || "Penerima Barang"}</div>
-                  </div>
-                </div>
-                <p>
-                  PIHAK PERTAMA telah menyerahkan kepada PIHAK KEDUA, dan PIHAK KEDUA telah menerima barang persediaan untuk keperluan: <strong>{viewingIssue.keperluan || "Operasional"}</strong> dengan rincian sebagai berikut:
-                </p>
-              </div>
-
-              <table className="w-full text-left text-xs border border-slate-300 border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 print:bg-slate-200">
-                    <th className="border border-slate-300 p-2 text-center w-12">No</th>
-                    <th className="border border-slate-300 p-2">Rincian Nama Barang</th>
-                    <th className="border border-slate-300 p-2 text-right w-24">Jumlah</th>
-                    <th className="border border-slate-300 p-2 text-right w-36">Nilai FIFO (Rp)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {viewingIssue.items.map((it, idx) => (
-                    <tr key={it.id}>
-                      <td className="border border-slate-300 p-2 text-center">{idx + 1}</td>
-                      <td className="border border-slate-300 p-2 font-medium">{it.itemNama}</td>
-                      <td className="border border-slate-300 p-2 text-right font-bold">{it.jumlah}</td>
-                      <td className="border border-slate-300 p-2 text-right font-mono">{formatRupiah(it.totalNilaiFifo)}</td>
-                    </tr>
-                  ))}
-                  <tr className="font-bold bg-slate-50 print:bg-slate-100">
-                    <td colSpan={3} className="border border-slate-300 p-2 text-right">Total Nilai Penyerahan:</td>
-                    <td className="border border-slate-300 p-2 text-right font-mono text-emerald-800">{formatRupiah(viewingIssue.totalNilai)}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              <p className="text-xs text-slate-600">
-                Demikian Berita Acara Serah Terima Barang ini dibuat dengan sebenarnya dalam rangkap secukupnya untuk dipergunakan sebagaimana mestinya.
+              {/* Paragraf Pembuka */}
+              <p className="text-xs leading-relaxed text-justify">
+                Pada hari ini tanggal <strong>{viewingIssue.tanggal}</strong>, kami yang bertanda tangan di bawah ini masing-masing:
               </p>
 
+              {/* Data Pihak */}
+              <div className="space-y-3 text-xs">
+                <div className="grid grid-cols-4 gap-2">
+                  <span className="font-semibold">Nama Penyerah</span>
+                  <span className="col-span-3">: {viewingIssue.namaPenyerah || "( ................................................ )"}</span>
+                  <span className="font-semibold">NIP</span>
+                  <span className="col-span-3">: {viewingIssue.nipPenyerah || "-"}</span>
+                  <span className="font-semibold">Jabatan</span>
+                  <span className="col-span-3">: {viewingIssue.jabatanPenyerah || "Pengurus Barang Pembantu"}</span>
+                  <span className="col-span-4 text-slate-500 italic">Selanjutnya disebut sebagai <strong>PIHAK PERTAMA (Yang Menyerahkan)</strong>.</span>
+                </div>
+
+                <div className="border-t border-slate-200 pt-2 grid grid-cols-4 gap-2">
+                  <span className="font-semibold">Penerima / Unit</span>
+                  <span className="col-span-3">: {viewingIssue.penerima}</span>
+                  <span className="font-semibold">Nama Penerima</span>
+                  <span className="col-span-3">: {viewingIssue.namaPenerima || viewingIssue.penerima}</span>
+                  <span className="font-semibold">NIP</span>
+                  <span className="col-span-3">: {viewingIssue.nipPenerima || "-"}</span>
+                  <span className="font-semibold">Jabatan</span>
+                  <span className="col-span-3">: {viewingIssue.jabatanPenerima || "Penerima Barang"}</span>
+                  <span className="col-span-4 text-slate-500 italic">Selanjutnya disebut sebagai <strong>PIHAK KEDUA (Yang Menerima)</strong>.</span>
+                </div>
+              </div>
+
+              <p className="text-xs leading-relaxed text-justify">
+                PIHAK PERTAMA menyerahkan barang persediaan kepada PIHAK KEDUA, dan PIHAK KEDUA menyatakan telah menerima barang persediaan dalam keadaan baik dan lengkap untuk keperluan: <strong>{viewingIssue.keperluan || "Operasional Kedinasan"}</strong>, dengan rincian sebagai berikut:
+              </p>
+
+              {/* Tabel Barang BAST */}
+              <div className="border border-slate-800 rounded-lg overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 text-slate-900 border-b border-slate-800 font-bold uppercase text-center">
+                    <tr>
+                      <th className="p-2 border-r border-slate-800 w-10">No</th>
+                      <th className="p-2 border-r border-slate-800 text-left">Nama Barang Persediaan</th>
+                      <th className="p-2 border-r border-slate-800 w-24">Jumlah</th>
+                      <th className="p-2 text-right">Nilai Perolehan (FIFO)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-300">
+                    {viewingIssue.items.map((it, idx) => (
+                      <tr key={idx}>
+                        <td className="p-2 border-r border-slate-800 text-center">{idx + 1}</td>
+                        <td className="p-2 border-r border-slate-800 font-medium">{it.itemNama}</td>
+                        <td className="p-2 border-r border-slate-800 text-center font-bold">{it.jumlah}</td>
+                        <td className="p-2 text-right font-mono">{formatRupiah(it.totalNilaiFifo)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-bold border-t border-slate-800">
+                      <td colSpan={3} className="p-2 border-r border-slate-800 text-right">Total Nilai Penyerahan:</td>
+                      <td className="p-2 text-right font-mono text-slate-900">{formatRupiah(viewingIssue.totalNilai)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
               {/* Tanda Tangan */}
-              <div className="grid grid-cols-2 gap-8 text-xs text-center pt-4">
+              <div className="pt-6 grid grid-cols-2 text-center text-xs gap-8 break-inside-avoid">
                 <div>
-                  <div className="font-medium text-slate-600">Yang Menerima (PIHAK KEDUA)</div>
-                  <div className="font-semibold text-slate-800 mt-1">{viewingIssue.jabatanPenerima || "Penerima Barang"}</div>
-                  <div className="h-16"></div>
-                  <div className="font-bold underline text-slate-900">{viewingIssue.penerima}</div>
-                  <div className="text-slate-500">NIP. {viewingIssue.nipPenerima || "................................"}</div>
+                  <div className="font-semibold text-slate-700">PIHAK KEDUA (Yang Menerima)</div>
+                  <div className="font-bold uppercase mt-0.5">{viewingIssue.jabatanPenerima || "Penerima Barang"}</div>
+                  <div className="h-20"></div>
+                  <div className="font-bold underline text-sm">
+                    {viewingIssue.namaPenerima || viewingIssue.penerima}
+                  </div>
+                  <div>NIP. {viewingIssue.nipPenerima || "................................"}</div>
                 </div>
 
                 <div>
-                  <div className="font-medium text-slate-600">Yang Menyerahkan (PIHAK PERTAMA)</div>
-                  <div className="font-semibold text-slate-800 mt-1">{viewingIssue.jabatanPenyerah || "Pengurus Barang Pembantu"}</div>
-                  <div className="h-16"></div>
-                  <div className="font-bold underline text-slate-900">{viewingIssue.namaPenyerah || "( ................................ )"}</div>
-                  <div className="text-slate-500">NIP. {viewingIssue.nipPenyerah || "................................"}</div>
+                  <div className="font-semibold text-slate-700">PIHAK PERTAMA (Yang Menyerahkan)</div>
+                  <div className="font-bold uppercase mt-0.5">{viewingIssue.jabatanPenyerah || "Pengurus Barang Pembantu"}</div>
+                  <div className="h-20"></div>
+                  <div className="font-bold underline text-sm">
+                    {viewingIssue.namaPenyerah || "( ................................................ )"}
+                  </div>
+                  <div>NIP. {viewingIssue.nipPenyerah || "................................"}</div>
                 </div>
               </div>
             </div>
@@ -405,21 +639,32 @@ export default function TransaksiKeluarPage() {
         </div>
       )}
 
-      {/* Modal Add Pengeluaran Baru */}
+      {/* Modal Add / Edit Pengeluaran */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl my-8 overflow-hidden">
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <h3 className="font-bold text-slate-800 text-base flex items-center space-x-2">
                 <ArrowUpRight className="w-5 h-5 text-blue-600" />
-                <span>Buat Pengeluaran Barang / BAST Baru</span>
+                <span>{editingIssueId ? `Edit Dokumen BAST: ${formData.nomorDokumen}` : "Buat Pengeluaran Barang / BAST Baru"}</span>
               </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
+              <button onClick={() => { setIsModalOpen(false); setEditingIssueId(null); }} className="text-slate-400 hover:text-slate-600 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSave} className="p-6 space-y-5">
+              {(draftOtomatis || draftWaktu) && (
+                <div className="p-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-xs flex items-start justify-between gap-3">
+                  <span>
+                    <strong>Draft tersimpan otomatis</strong> pukul {draftOtomatis || draftWaktu}. Isian ini tidak
+                    hilang walaupun halaman ditutup atau komputer mati.
+                  </span>
+                  <button type="button" onClick={buangDraft} className="font-semibold underline whitespace-nowrap">
+                    Buang draft
+                  </button>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
@@ -450,15 +695,18 @@ export default function TransaksiKeluarPage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                    Nomor BAST (Opsional)
+                    Nomor BAST
                   </label>
                   <input
                     type="text"
-                    placeholder="Otomatis"
+                    placeholder="Otomatis bila dikosongkan"
                     value={formData.nomorDokumen}
                     onChange={(e) => setFormData({ ...formData, nomorDokumen: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-mono"
                   />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Nomor saran: <span className="font-mono">{nomorSaran || "-"}</span>
+                  </p>
                 </div>
               </div>
 
@@ -546,40 +794,37 @@ export default function TransaksiKeluarPage() {
                     <tbody className="divide-y divide-slate-100">
                       {formRows.map((row, idx) => {
                         const selectedItem = items.find((i) => i.id === row.itemId);
-                        const isOverStock = selectedItem && row.jumlah > selectedItem.stok;
+                        const diminta = totalPerBarang(row.itemId);
+                        const isOverStock = Boolean(
+                          selectedItem && !editingIssueId && row.itemId && diminta > selectedItem.stok
+                        );
                         return (
                           <tr key={idx}>
                             <td className="p-2">
-                              <select
-                                required
+                              <ItemCombobox
+                                items={items}
                                 value={row.itemId}
-                                onChange={(e) => handleRowChange(idx, "itemId", e.target.value)}
-                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
-                              >
-                                {items.map((it) => (
-                                  <option key={it.id} value={it.id}>
-                                    {it.nama} ({it.satuanNama}) — Stok: {it.stok}
-                                  </option>
-                                ))}
-                              </select>
+                                onChange={(itemId) => handlePilihBarang(idx, itemId)}
+                                tampilkanStok
+                                placeholder="Ketik nama / kode barang..."
+                                className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-left text-xs hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
                             </td>
                             <td className="p-2">
-                              <input
-                                type="number"
-                                min="1"
-                                step="any"
+                              <NumberInput
+                                mode="qty"
                                 required
                                 value={row.jumlah}
-                                onChange={(e) => handleRowChange(idx, "jumlah", Number(e.target.value))}
-                                className={`w-full px-2.5 py-1.5 rounded-lg border text-xs ${
+                                onChange={(nilai) => handleRowChange(idx, { jumlah: nilai })}
+                                className={`w-full px-2.5 py-1.5 rounded-lg border text-xs text-right ${
                                   isOverStock
                                     ? "border-rose-500 bg-rose-50 text-rose-800 font-bold"
                                     : "border-slate-300"
                                 }`}
                               />
-                              {isOverStock && (
+                              {isOverStock && selectedItem && (
                                 <span className="text-[10px] text-rose-600">
-                                  Melebihi stok ({selectedItem.stok})
+                                  Melebihi stok ({formatAngka(selectedItem.stok)})
                                 </span>
                               )}
                             </td>
@@ -605,7 +850,7 @@ export default function TransaksiKeluarPage() {
               <div className="pt-2 flex items-center justify-end space-x-3">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => { setIsModalOpen(false); setEditingIssueId(null); }}
                   className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium"
                 >
                   Batal
@@ -616,7 +861,7 @@ export default function TransaksiKeluarPage() {
                   className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition shadow flex items-center space-x-2"
                 >
                   <Check className="w-4 h-4" />
-                  <span>{saving ? "Memotong Stok FIFO..." : "Simpan Pengeluaran & BAST"}</span>
+                  <span>{saving ? "Memproses Stok FIFO..." : (editingIssueId ? "Simpan Perubahan BAST" : "Simpan Pengeluaran & BAST")}</span>
                 </button>
               </div>
             </form>

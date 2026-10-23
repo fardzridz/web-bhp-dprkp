@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/session";
 import { db, schema } from "@/db";
 import { eq, desc, and } from "drizzle-orm";
+import { formatRupiah } from "@/lib/format";
 import Link from "next/link";
 import {
   Package,
@@ -14,7 +15,7 @@ import {
 
 export default async function DashboardPage() {
   const session = await getSession();
-  const activeBidangId = session?.activeBidangId;
+  const activeBidangId = session?.role === "SUPERADMIN" ? session?.activeBidangId : (session?.bidangId || session?.activeBidangId);
 
   if (!activeBidangId) {
     return (
@@ -74,14 +75,6 @@ export default async function DashboardPage() {
     limit: 5,
   });
 
-  const formatRupiah = (num: number) => {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      maximumFractionDigits: 0,
-    }).format(num);
-  };
-
   return (
     <div className="space-y-6">
       {/* Welcome Banner */}
@@ -96,7 +89,7 @@ export default async function DashboardPage() {
               Selamat Datang, {session?.nama}
             </h1>
             <p className="text-sm text-emerald-100/90 mt-1 max-w-2xl">
-              Pengelolaan dan Penatausahaan Barang Habis Pakai (BHP) Persediaan DPRKP Kabupaten Pasuruan.
+              Pengelolaan dan Penatausahaan Barang Habis Pakai (BHP) Persediaan DPRKP Kota Pasuruan.
             </p>
           </div>
           <div className="flex items-center gap-2">
