@@ -1,9 +1,7 @@
-import { drizzle as drizzleLibsql, type LibSQLDatabase } from "drizzle-orm/libsql";
-import { drizzle as drizzleD1, type DrizzleD1Database } from "drizzle-orm/d1";
-import { createClient } from "@libsql/client";
+import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
-export type Database = LibSQLDatabase<typeof schema>;
+export type Database = DrizzleD1Database<typeof schema>;
 interface D1BindingLike {
   prepare(query: string): unknown;
 }
@@ -41,22 +39,32 @@ function resolveD1Binding(): D1BindingLike | null {
   return null;
 }
 
-let cachedLibsqlDb: LibSQLDatabase<typeof schema> | null = null;
+let cachedDb: Database | null = null;
 
 export function getDb(): Database {
+  if (cachedDb) return cachedDb;
   const d1 = resolveD1Binding();
   if (d1) {
-    return drizzleD1(d1 as unknown as Parameters<typeof drizzleD1>[0], { schema }) as unknown as Database;
+    cachedDb = drizzle(d1 as unknown as Parameters<typeof drizzle>[0], { schema });
+    return cachedDb;
   }
 
-  if (!cachedLibsqlDb) {
-    const client = createClient({
-      url: process.env.DATABASE_URL || "file:local.sqlite",
-      authToken: process.env.DATABASE_AUTH_TOKEN,
-    });
-    cachedLibsqlDb = drizzleLibsql(client, { schema });
-  }
-  return cachedLibsqlDb;
+  // Fallback dummy D1 client for build-time static evaluation
+  const dummyD1 = {
+    prepare: () => ({
+      bind: () => ({
+        all: async () => ({ results: [] }),
+        get: async () => null,
+        run: async () => ({ success: true }),
+      }),
+      all: async () => ({ results: [] }),
+      get: async () => null,
+      run: async () => ({ success: true }),
+    }),
+    batch: async () => [],
+    exec: async () => ({ count: 0, duration: 0 }),
+  };
+  return drizzle(dummyD1 as unknown as Parameters<typeof drizzle>[0], { schema });
 }
 
 export const db: Database = new Proxy({} as unknown as Database, {
