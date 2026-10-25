@@ -120,30 +120,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Quick Credential Hints for Convenience */}
-          <div className="mt-6 pt-5 border-t border-slate-100">
-            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
-              Akun Cepat untuk Pengujian:
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => fillQuick("superadmin", "admin123")}
-                className="text-left p-2 rounded-lg bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 transition"
-              >
-                <div className="font-semibold text-slate-700">Superadmin</div>
-                <div className="text-[11px] text-slate-500">superadmin</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillQuick("operator.sekretariat", "operator123")}
-                className="text-left p-2 rounded-lg bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 transition"
-              >
-                <div className="font-semibold text-slate-700">Op. Sekretariat</div>
-                <div className="text-[11px] text-slate-500">operator.sekretariat</div>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
