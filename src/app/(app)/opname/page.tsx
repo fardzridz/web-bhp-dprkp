@@ -85,7 +85,7 @@ interface InputRow {
   hargaSatuan: number | null;
 }
 
-const KONDISI_OPTIONS = ["Baik", "Rusak Ringan", "Rusak Berat"];
+const KONDISI_OPTIONS = ["Baik", "Rusak Ringan", "Rusak Berat", "Kadaluarsa"];
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 

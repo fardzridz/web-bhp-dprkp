@@ -39,13 +39,25 @@ function resolveD1Binding(): D1BindingLike | null {
   return null;
 }
 
+// D1 menolak SQL BEGIN/COMMIT/SAVEPOINT (D1_ERROR 7500), jadi transaksi
+// interaktif bawaan drizzle-orm/d1 tidak bisa dipakai di Cloudflare. Transaksi
+// digantikan eksekusi statement sekuensial (auto-commit per statement); callback
+// tetap menerima instance db yang sama agar semua call site tidak perlu diubah.
+function applyD1TransactionShim(instance: Database): Database {
+  const transaction = async <T>(fn: (tx: Database) => Promise<T>): Promise<T> => fn(instance);
+  Object.defineProperty(instance, "transaction", { value: transaction, configurable: true });
+  return instance;
+}
+
 let cachedDb: Database | null = null;
 
 export function getDb(): Database {
   if (cachedDb) return cachedDb;
   const d1 = resolveD1Binding();
   if (d1) {
-    cachedDb = drizzle(d1 as unknown as Parameters<typeof drizzle>[0], { schema });
+    cachedDb = applyD1TransactionShim(
+      drizzle(d1 as unknown as Parameters<typeof drizzle>[0], { schema })
+    );
     return cachedDb;
   }
 
@@ -64,7 +76,9 @@ export function getDb(): Database {
     batch: async () => [],
     exec: async () => ({ count: 0, duration: 0 }),
   };
-  return drizzle(dummyD1 as unknown as Parameters<typeof drizzle>[0], { schema });
+  return applyD1TransactionShim(
+    drizzle(dummyD1 as unknown as Parameters<typeof drizzle>[0], { schema })
+  );
 }
 
 export const db: Database = new Proxy({} as unknown as Database, {
