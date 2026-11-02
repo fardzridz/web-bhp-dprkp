@@ -73,6 +73,8 @@ INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-set', 'set', 17
 INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-buku', 'buku', 1792763456053);
 INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-meter', 'meter', 1792763456053);
 INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-sak', 'sak', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-pcs', 'pcs', 1792763456053);
+INSERT OR IGNORE INTO units (id, nama, created_at) VALUES ('unit-paket', 'paket', 1792763456053);
 INSERT OR REPLACE INTO users (id, username, password_hash, salt, nama, role, bidang_id, status, created_at, updated_at) VALUES ('usr-superadmin', 'superadmin', '4b4593fd473e181970b9bac8cf0dd3683ab7b8b191c96a3a03b024c76c4f97c7', 'ec147f7fdc14858c3ab05e545ae07e99', 'Superadmin Pengurus Barang Dinas', 'SUPERADMIN', NULL, 'ACTIVE', 1792763456053, 1792763456053);
 INSERT OR REPLACE INTO users (id, username, password_hash, salt, nama, role, bidang_id, status, created_at, updated_at) VALUES ('usr-sekretariat', 'operator.sekretariat', 'f1a46d5601d989a2802039bab03c9e6c36806a9edf3babec2841f2cff4e38baa', 'f1ce1b3c657a3d1d157dcf8931fcf3be', 'Operator BHP Sekretariat', 'OPERATOR_BIDANG', 'sekretariat', 'ACTIVE', 1792763456053, 1792763456053);
 INSERT OR REPLACE INTO users (id, username, password_hash, salt, nama, role, bidang_id, status, created_at, updated_at) VALUES ('usr-perumahan', 'operator.perumahan', '8b692581a14d3f2622aae551085f4e64278336224fcb680f20fc733f9d3c09a2', '24d718f871c3f665eacfcd4e29c7eb3a', 'Operator BHP Bidang Perumahan', 'OPERATOR_BIDANG', 'perumahan', 'ACTIVE', 1792763456053, 1792763456053);

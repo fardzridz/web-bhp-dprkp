@@ -112,7 +112,7 @@ async function seed() {
   }
 
   // 3. Units
-  const unitsList = ["buah", "pak", "box", "rim", "rol", "botol", "lembar", "lusin", "set", "buku", "meter", "sak"];
+  const unitsList = ["buah", "pak", "box", "rim", "rol", "botol", "lembar", "lusin", "set", "buku", "meter", "sak", "pcs", "paket"];
   for (const u of unitsList) {
     await client.execute({
       sql: `INSERT OR IGNORE INTO units (id, nama, created_at) VALUES (?, ?, ?)`,

@@ -29,6 +29,27 @@
       "when": 1792114041946,
       "tag": "0003_p1_opname_links",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792200000000,
+      "tag": "0004_p3_cetak_resmi",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792300000000,
+      "tag": "0005_p3_tanggal_ba",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792763456053,
+      "tag": "0006_add_units_pcs_paket",
+      "breakpoints": true
     }
   ]
 }
