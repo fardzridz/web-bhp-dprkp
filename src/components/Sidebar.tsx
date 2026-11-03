@@ -45,7 +45,7 @@ export function Sidebar({ user }: SidebarProps) {
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Master Barang", href: "/barang", icon: Package },
-    { label: "Kategori Barang", href: "/kategori", icon: Layers },
+    { label: "Kategori & Satuan", href: "/kategori", icon: Layers },
     { label: "Master Vendor", href: "/vendor", icon: Truck },
     { label: "Barang Masuk (Penerimaan)", href: "/transaksi/masuk", icon: ArrowDownLeft },
     { label: "Barang Keluar (BAST)", href: "/transaksi/keluar", icon: ArrowUpRight },
