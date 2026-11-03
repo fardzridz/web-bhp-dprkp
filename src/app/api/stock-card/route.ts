@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { db, schema } from "@/db";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { buildLedger, collectItemLedger, errorResponse } from "@/lib/inventory";
 
 export async function GET(request: Request) {
@@ -12,9 +12,8 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const itemId = searchParams.get("itemId");
-  if (!itemId) {
-    return NextResponse.json({ error: "itemId diperlukan" }, { status: 400 });
-  }
+  const itemIdsParam = searchParams.get("itemIds"); // comma separated
+  const allParam = searchParams.get("all"); // "true"
 
   const activeBidangId =
     session.role === "SUPERADMIN"
@@ -22,58 +21,86 @@ export async function GET(request: Request) {
       : (session.bidangId || session.activeBidangId)!;
 
   try {
-    const item = await db.query.items.findFirst({
-      where: and(eq(schema.items.id, itemId), eq(schema.items.bidangId, activeBidangId)),
-    });
+    let targetItems: Array<typeof schema.items.$inferSelect> = [];
 
-    if (!item) {
-      return NextResponse.json({ error: "Barang tidak ditemukan di bidang ini" }, { status: 404 });
+    if (allParam === "true") {
+      targetItems = await db.query.items.findMany({
+        where: eq(schema.items.bidangId, activeBidangId),
+        orderBy: [asc(schema.items.kode)],
+      });
+    } else if (itemIdsParam) {
+      const ids = itemIdsParam.split(",").map((s) => s.trim()).filter(Boolean);
+      if (ids.length > 0) {
+        targetItems = await db.query.items.findMany({
+          where: and(eq(schema.items.bidangId, activeBidangId), inArray(schema.items.id, ids)),
+          orderBy: [asc(schema.items.kode)],
+        });
+      }
+    } else if (itemId) {
+      const it = await db.query.items.findFirst({
+        where: and(eq(schema.items.id, itemId), eq(schema.items.bidangId, activeBidangId)),
+      });
+      if (it) targetItems = [it];
     }
 
-    let unitName = "-";
-    if (item.satuanId) {
-      const u = await db.query.units.findFirst({ where: eq(schema.units.id, item.satuanId) });
-      if (u) unitName = u.nama;
+    if (targetItems.length === 0) {
+      return NextResponse.json({ error: "Barang tidak ditemukan" }, { status: 404 });
     }
 
-    // Pergerakan lengkap: baris saldo awal, penerimaan, pengeluaran, dan
-    // penyesuaian stock opname — dihitung dari sumber yang sama dengan laporan.
-    const ledgerRows = buildLedger(await collectItemLedger(db, activeBidangId, itemId));
-    const lastRow = ledgerRows.length > 0 ? ledgerRows[ledgerRows.length - 1] : undefined;
+    const allUnits = await db.query.units.findMany();
+    const unitMap = new Map(allUnits.map((u: typeof schema.units.$inferSelect) => [u.id, u.nama]));
 
-    const ledger = ledgerRows.map((e) => ({
-      tanggal: e.tanggal,
-      tipe: e.tipe,
-      nomorDokumen: e.nomorDokumen,
-      keterangan: e.keterangan,
-      inQty: e.tipe === "IN" ? e.qty : 0,
-      hargaSatuan: e.hargaSatuan,
-      inNilai: e.tipe === "IN" ? e.totalNilai : 0,
-      outQty: e.tipe === "OUT" ? e.qty : 0,
-      outNilai: e.tipe === "OUT" ? e.totalNilai : 0,
-      saldoQty: e.saldoQty,
-      saldoNilai: e.saldoNilai,
-    }));
+    const results = [];
 
-    const activeLayers = await db.query.fifoLayers.findMany({
-      where: and(
-        eq(schema.fifoLayers.bidangId, activeBidangId),
-        eq(schema.fifoLayers.itemId, itemId),
-        eq(schema.fifoLayers.status, "ACTIVE")
-      ),
-      orderBy: [asc(schema.fifoLayers.tanggal)],
-    });
+    for (const item of targetItems) {
+      const unitName = item.satuanId ? unitMap.get(item.satuanId) || "-" : "-";
+      const ledgerRows = buildLedger(await collectItemLedger(db, activeBidangId, item.id));
+      const lastRow = ledgerRows.length > 0 ? ledgerRows[ledgerRows.length - 1] : undefined;
 
-    return NextResponse.json({
-      item: {
-        ...item,
-        satuanNama: unitName,
-      },
-      currentStock: lastRow?.saldoQty ?? 0,
-      currentValue: lastRow?.saldoNilai ?? 0,
-      activeLayers,
-      ledger,
-    });
+      const ledger = ledgerRows.map((e) => ({
+        tanggal: e.tanggal,
+        tipe: e.tipe,
+        nomorDokumen: e.nomorDokumen,
+        keterangan: e.keterangan,
+        inQty: e.tipe === "IN" ? e.qty : 0,
+        hargaSatuan: e.hargaSatuan,
+        inNilai: e.tipe === "IN" ? e.totalNilai : 0,
+        outQty: e.tipe === "OUT" ? e.qty : 0,
+        outNilai: e.tipe === "OUT" ? e.totalNilai : 0,
+        saldoQty: e.saldoQty,
+        saldoNilai: e.saldoNilai,
+      }));
+
+      const activeLayers = await db.query.fifoLayers.findMany({
+        where: and(
+          eq(schema.fifoLayers.bidangId, activeBidangId),
+          eq(schema.fifoLayers.itemId, item.id),
+          eq(schema.fifoLayers.status, "ACTIVE")
+        ),
+        orderBy: [asc(schema.fifoLayers.tanggal)],
+      });
+
+      results.push({
+        item: {
+          ...item,
+          satuanNama: unitName,
+        },
+        currentStock: lastRow?.saldoQty ?? 0,
+        currentValue: lastRow?.saldoNilai ?? 0,
+        activeLayers,
+        ledger,
+      });
+    }
+
+    // Jika dipanggil dengan all=true atau itemIds, kembalikan array cards: [...]
+    if (allParam === "true" || itemIdsParam) {
+      return NextResponse.json({
+        cards: results,
+      });
+    }
+
+    // Fallback single item untuk backward compatibility
+    return NextResponse.json(results[0]);
   } catch (err: unknown) {
     return errorResponse(err);
   }
