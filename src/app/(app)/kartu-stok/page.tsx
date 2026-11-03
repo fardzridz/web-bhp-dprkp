@@ -477,6 +477,22 @@ export default function KartuStokPage() {
     <div className="space-y-6">
       {/* Printable Area (Hanya Muncul Pas Window.Print) */}
       <div className="hidden print:block print:w-full">
+        <style dangerouslySetInnerHTML={{ __html: `
+          @page {
+            size: portrait;
+            margin: 12mm 15mm;
+          }
+          @media print {
+            body {
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .print-page {
+              page-break-after: always;
+              break-after: page;
+            }
+          }
+        ` }} />
         {batchCards.length > 0 ? (
           batchCards.map((card, i) => renderOfficialPrintCard(card, i))
         ) : cardData ? (
