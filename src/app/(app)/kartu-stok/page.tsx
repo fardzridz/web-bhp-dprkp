@@ -213,21 +213,21 @@ export default function KartuStokPage() {
     return (
       <div
         key={c.item.id || index}
-        className="print-page bg-white p-8 text-black text-xs font-sans print:p-0 print:m-0"
+        className="print-page bg-white text-black text-xs font-sans"
         style={{ pageBreakAfter: "always" }}
       >
         {/* Header Lembar */}
         <div className="relative mb-4">
-          <div className="absolute left-0 top-0 text-sm font-bold text-slate-800">
+          <div className="absolute left-0 top-0 text-sm font-bold text-black">
             {index + 1}
           </div>
-          <div className="text-center font-bold text-base tracking-wide uppercase">
+          <div className="text-center font-bold text-base tracking-wide uppercase text-black">
             Kartu Barang
           </div>
         </div>
 
         {/* Metadata Barang */}
-        <div className="mb-3 space-y-1 text-[11px] font-medium text-slate-900">
+        <div className="mb-3 space-y-1 text-[11px] font-medium text-black">
           <div className="flex">
             <span className="w-28">Nama Barang</span>
             <span className="w-4">:</span>
@@ -241,9 +241,9 @@ export default function KartuStokPage() {
         </div>
 
         {/* Tabel Mutasi Utama */}
-        <table className="w-full border-collapse border border-black text-[11px]">
+        <table className="w-full border-collapse border border-black text-[11px] bg-white">
           <thead>
-            <tr className="bg-slate-100/70 text-center font-bold border-b border-black">
+            <tr className="bg-white text-center font-bold border-b border-black">
               <th rowSpan={2} className="border border-black px-2 py-2 w-24">
                 Tanggal
               </th>
@@ -257,7 +257,7 @@ export default function KartuStokPage() {
                 Nilai Penerimaan Barang Persediaan
               </th>
             </tr>
-            <tr className="bg-slate-100/70 text-center font-bold border-b border-black">
+            <tr className="bg-white text-center font-bold border-b border-black">
               <th className="border border-black px-2 py-1 w-16">Masuk</th>
               <th className="border border-black px-2 py-1 w-16">Keluar</th>
               <th className="border border-black px-2 py-1 w-16">Sisa</th>
@@ -265,7 +265,7 @@ export default function KartuStokPage() {
           </thead>
           <tbody>
             {c.ledger.map((row, rIdx) => (
-              <tr key={rIdx} className="border-b border-black">
+              <tr key={rIdx} className="border-b border-black bg-white">
                 <td className="border border-black px-2 py-1 text-center whitespace-nowrap">
                   {row.tanggal}
                 </td>
@@ -292,13 +292,13 @@ export default function KartuStokPage() {
 
             {/* Baris Kosong Tambahan */}
             {Array.from({ length: barisKosongCount }).map((_, kIdx) => (
-              <tr key={`empty-${kIdx}`} className="border-b border-black h-6">
+              <tr key={`empty-${kIdx}`} className="border-b border-black h-6 bg-white">
                 <td className="border border-black px-2 py-1 text-center"></td>
                 <td className="border border-black px-2 py-1 text-right"></td>
                 <td className="border border-black px-2 py-1 text-center"></td>
                 <td className="border border-black px-2 py-1 text-center"></td>
                 <td className="border border-black px-2 py-1 text-center"></td>
-                <td className="border border-black px-2 py-1 text-right font-mono text-slate-400">
+                <td className="border border-black px-2 py-1 text-right font-mono text-black">
                   <div className="flex justify-between">
                     <span>Rp</span>
                     <span>-</span>
@@ -308,7 +308,7 @@ export default function KartuStokPage() {
             ))}
 
             {/* Baris Total / Jumlah */}
-            <tr className="bg-slate-100/70 font-bold border-t-2 border-black">
+            <tr className="bg-white font-bold border-t-2 border-black">
               <td colSpan={2} className="border border-black px-3 py-1.5 text-center uppercase">
                 Jumlah
               </td>
@@ -334,16 +334,16 @@ export default function KartuStokPage() {
         {/* Rekapitulasi Bagian Bawah */}
         <div className="mt-4 space-y-3">
           {/* 1. Ringkasan Saldo Awal - Akhir */}
-          <table className="w-full border-collapse border border-black text-[11px]">
+          <table className="w-full border-collapse border border-black text-[11px] bg-white">
             <thead>
-              <tr className="bg-slate-100/70 text-center font-bold border-b border-black">
+              <tr className="bg-white text-center font-bold border-b border-black">
                 <th className="border border-black px-3 py-1 text-left">Keterangan</th>
                 <th className="border border-black px-2 py-1 w-28 text-center">Jumlah</th>
                 <th className="border border-black px-3 py-1 w-44 text-right">Nilai</th>
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-black">
+              <tr className="border-b border-black bg-white">
                 <td className="border border-black px-3 py-1 font-medium">
                   Saldo Awal {saldoAwalTanggal}
                 </td>
@@ -357,7 +357,7 @@ export default function KartuStokPage() {
                   </div>
                 </td>
               </tr>
-              <tr className="border-b border-black">
+              <tr className="border-b border-black bg-white">
                 <td className="border border-black px-3 py-1 font-medium">
                   Nilai Penerimaan Barang Persediaan Tahun Berjalan
                 </td>
@@ -371,7 +371,7 @@ export default function KartuStokPage() {
                   </div>
                 </td>
               </tr>
-              <tr className="bg-slate-50 font-bold border-b border-black">
+              <tr className="bg-white font-bold border-b border-black">
                 <td className="border border-black px-3 py-1">
                   Saldo Akhir {saldoAkhirTanggal}
                 </td>
@@ -389,14 +389,14 @@ export default function KartuStokPage() {
           </table>
 
           {/* 2. Rincian Lapisan FIFO */}
-          <table className="w-full border-collapse border border-black text-[11px]">
+          <table className="w-full border-collapse border border-black text-[11px] bg-white">
             <thead>
-              <tr className="bg-slate-100/70 border-b border-black font-bold">
+              <tr className="bg-white border-b border-black font-bold">
                 <th colSpan={3} className="border border-black px-3 py-1 text-left">
                   Rincian: Metode Penilaian FIFO ☑
                 </th>
               </tr>
-              <tr className="bg-slate-50 text-center font-bold border-b border-black">
+              <tr className="bg-white text-center font-bold border-b border-black">
                 <th className="border border-black px-2 py-1 w-32">Jumlah Barang</th>
                 <th className="border border-black px-2 py-1 w-36">Harga Satuan</th>
                 <th className="border border-black px-3 py-1 text-right">Nilai</th>
@@ -404,7 +404,7 @@ export default function KartuStokPage() {
             </thead>
             <tbody>
               {c.activeLayers.length === 0 ? (
-                <tr className="border-b border-black">
+                <tr className="border-b border-black bg-white">
                   <td className="border border-black px-2 py-1 text-center">0</td>
                   <td className="border border-black px-2 py-1 text-center">-</td>
                   <td className="border border-black px-3 py-1 text-right font-mono">
@@ -416,7 +416,7 @@ export default function KartuStokPage() {
                 </tr>
               ) : (
                 c.activeLayers.map((l, lIdx) => (
-                  <tr key={lIdx} className="border-b border-black">
+                  <tr key={lIdx} className="border-b border-black bg-white">
                     <td className="border border-black px-2 py-1 text-center font-bold">
                       {l.sisa}
                     </td>
@@ -435,10 +435,10 @@ export default function KartuStokPage() {
               {/* Garis kosong pelengkap FIFO jika cuma 1 layer */}
               {c.activeLayers.length < 3 &&
                 Array.from({ length: 3 - c.activeLayers.length }).map((_, fIdx) => (
-                  <tr key={`fifo-emp-${fIdx}`} className="border-b border-black h-5">
+                  <tr key={`fifo-emp-${fIdx}`} className="border-b border-black h-5 bg-white">
                     <td className="border border-black px-2 py-1"></td>
                     <td className="border border-black px-2 py-1"></td>
-                    <td className="border border-black px-3 py-1 text-right font-mono text-slate-300">
+                    <td className="border border-black px-3 py-1 text-right font-mono text-black">
                       <div className="flex justify-between">
                         <span>Rp</span>
                         <span>-</span>
@@ -450,9 +450,9 @@ export default function KartuStokPage() {
           </table>
 
           {/* 3. Beban Persediaan */}
-          <table className="w-full border-collapse border border-black text-[11px] font-bold">
+          <table className="w-full border-collapse border border-black text-[11px] font-bold bg-white">
             <tbody>
-              <tr className="bg-slate-100/70 border border-black">
+              <tr className="bg-white border border-black">
                 <td className="border border-black px-3 py-1.5">
                   Persediaan Yang Digunakan (Beban Persediaan)
                 </td>
@@ -480,16 +480,20 @@ export default function KartuStokPage() {
         <style dangerouslySetInnerHTML={{ __html: `
           @page {
             size: portrait;
-            margin: 12mm 15mm;
+            margin: 0;
           }
           @media print {
-            body {
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
+            html, body {
+              background: #fff !important;
+              color: #000 !important;
+              margin: 0 !important;
+              padding: 0 !important;
             }
             .print-page {
+              padding: 15mm 15mm !important;
               page-break-after: always;
               break-after: page;
+              box-sizing: border-box;
             }
           }
         ` }} />
